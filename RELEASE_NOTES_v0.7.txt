@@ -1,0 +1,22 @@
+HCS-AI v0.7 — Self-Contained Local AI
+
+v0.7.1 installer repair
+- Large model downloads now use Windows curl instead of the older PowerShell
+  web downloader, avoiding its practical problems with files over 2 GB.
+- Installation and internal-AI setup write persistent diagnostic logs.
+- If the optional model download fails, the main application installation still
+  completes and HCS-AI launches; setup can be retried from the System tab.
+
+- LM Studio is no longer a required dependency.
+- HCS-AI manages a private llama.cpp inference server automatically.
+- The installer can download the official Windows CPU x64 llama.cpp runtime.
+- Recommended default model: Qwen3-4B-Instruct-2507 Q4_K_M (about 2.5 GB).
+- Added a System-tab panel for engine status, GGUF selection, setup, start, stop,
+  and refresh operations.
+- The internal inference server automatically tries additional ports when port
+  1234 is occupied, and every HCS/HKR model client follows the selected port.
+- HKR research summaries, algorithm extraction, algorithm code generation, and
+  ordinary HCS chat share the same managed model backend.
+- External OpenAI-compatible model servers remain possible as an advanced option.
+
+Software cost: $0. Initial download: approximately 2.5–3 GB.

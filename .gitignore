@@ -1,0 +1,43 @@
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# Python cache
+__pychache__/
+*.py[cod]
+*.py
+
+# AI models / large model files
+models/
+*.gguf
+*.safetensors
+*.bin
+
+# Local databases and generated data
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+
+# Secrets / local configuration
+.env
+.env.*
+secrets.json
+
+# IDE/editor files
+.vscode/
+.idea/
+
+# Windwos
+Thumbs.db
+Desktop.ini
+
+#Downloaded/compiled
+runtime dependencies
+runtime/llama.cpp/

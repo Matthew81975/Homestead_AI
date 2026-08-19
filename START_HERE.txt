@@ -1,0 +1,9 @@
+HCS-AI v0.7 — Self-Contained Local AI + HKR
+============================================
+1. Extract this ZIP to a permanent folder.
+2. Double-click install.bat.
+3. The installer creates Desktop and Start Menu shortcuts and launches HCS-AI.
+4. Accept the optional Internal AI download during setup (about 2.5 GB for the model).
+5. HCS-AI starts and stops llama.cpp automatically; LM Studio is not required.
+6. Use System > Internal AI Engine to select another GGUF model or control the engine.
+7. Use the HKR Librarian tab to research and add expert knowledge.

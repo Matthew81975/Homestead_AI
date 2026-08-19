@@ -1,0 +1,11 @@
+HCS-AI v0.7 verification
+
+The release ZIP is tested with Python compileall, JSON parsing, archive CRC
+verification, and a simulated occupied-port fallback before delivery.
+
+The internal AI runtime and GGUF model are downloaded during installation from:
+- ggml-org/llama.cpp official GitHub releases
+- lmstudio-community/Qwen3-4B-Instruct-2507-GGUF on Hugging Face
+
+The installer selects the current Windows CPU x64 runtime and the Q4_K_M model
+file through the providers' metadata APIs instead of relying on a stale binary URL.

@@ -1,0 +1,39 @@
+HCS-AI v0.6 — HKR Algorithm Library
+
+v0.7 self-contained inference
+- Added an HCS-managed llama.cpp server; LM Studio is no longer required.
+- Added a Windows setup utility for the llama.cpp CPU runtime and the recommended
+  Qwen3-4B-Instruct-2507 Q4_K_M GGUF model.
+- Added internal-engine status, model selection, setup, start, stop, and refresh
+  controls to the System tab.
+- The managed engine and HCS service both select another port when their preferred
+  ports are occupied.
+- HKR summarization and algorithm extraction now use the same managed inference endpoint.
+
+Maintenance update
+- The server now tries up to 100 consecutive ports beginning with the configured port.
+- The GUI automatically discovers the selected port and retries during startup.
+- Local-model requests now retry without tool calling when the loaded model rejects
+  the tools API, preventing that compatibility issue from surfacing as a 502.
+- Local-engine connection, timeout, and HTTP errors now include a useful diagnosis.
+
+New
+- HKR now maintains a structured algorithms database as capable-knowledge infrastructure.
+- New HKR Algorithm Library GUI with Research / Algorithms / Software workspaces.
+- Search algorithms by name, goal, problem class, domain, constraints, description, or alternatives.
+- Algorithm records store aliases, domain, problem class, problem solved, inputs/outputs, assumptions,
+  constraints, time/space complexity, hardware/numerical notes, dependencies, pseudocode/reference code,
+  tests, failure modes, alternatives, license, confidence, verification status, and timestamps.
+- Provenance is retained in algorithm_sources, linking algorithm records back to HKR source documents.
+- Best-effort automatic algorithm extraction runs when newly researched HKR documents are stored.
+- "Scan HKR Documents" can mine already-collected HKR documents using the local HCS model.
+- Canonical-name/alias merging reduces duplicate records and combines evidence from multiple sources.
+- Coding support can generate Python or C++ implementations from a selected algorithm record.
+- HCS tool registry now exposes search_hkr_algorithms, get_hkr_algorithm, and code_hkr_algorithm so the
+  local coding LLM can deliberately retrieve known methods rather than reinventing standard algorithms.
+
+Safety / behavior
+- Algorithm extraction is conservative and source-grounded; low-confidence candidates are discarded.
+- Generated code is not automatically executed or installed.
+- Source provenance is retained so records can be checked against the original HKR material.
+- Existing HKR documents, External Library behavior, PyPI cache, installer auto-launch, and shortcuts remain.

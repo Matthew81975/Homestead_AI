@@ -1,0 +1,16 @@
+HCS-AI v0.5 — HKR Software Resources
+
+New:
+- HKR software_resources catalog alongside the existing document catalog.
+- PyPI package lookup: package version, summary, Python requirement, dependency metadata, and best compatible distribution.
+- "Cache Package" downloads one package archive, verifies SHA-256 from PyPI metadata, and stores it versioned under HKR/software/python.
+- "Cache + Dependencies" uses `python -m pip download` to resolve a complete offline bundle without installing packages.
+- HCS tools: find_python_package, search_hkr_software, cache_python_package, cache_python_bundle.
+- HKR GUI controls for package discovery and caching. TensorFlow is pre-filled as an example.
+- Cached code is NEVER automatically imported, installed, or executed.
+
+Notes:
+- Existing HKR document research and External Library workflows remain intact.
+- Python package bundles are resolved for the Python/runtime/platform running HCS. This helps avoid caching wheels that cannot run on the machine.
+- requirements.txt now includes packaging>=24.1 for wheel compatibility checks.
+Installer note: creates HCS-AI desktop and Start Menu shortcuts, then install.bat launches HCS-AI after successful installation.
