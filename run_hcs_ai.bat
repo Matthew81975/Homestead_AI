@@ -5,6 +5,6 @@ if not exist ".venv\Scripts\python.exe" (
   pause
   exit /b 1
 )
-start "HCS-AI Server" ".venv\Scripts\python.exe" -m hcs_ai.server
+start "HCS-AI Server" ".venv\Scripts\python.exe" -m hcs_ai.server_tree
 timeout /t 2 /nobreak >nul
-".venv\Scripts\python.exe" -m hcs_ai.gui
+".venv\Scripts\python.exe" -m hcs_ai.gui_tree
