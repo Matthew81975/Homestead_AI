@@ -32,11 +32,14 @@ def load_config() -> dict:
 
     config = _deep_merge(default_config, local_config)
 
-    # The application version is part of the installed code, not a user setting.
-    # Keep local configuration from pinning HCS to an old displayed version.
-    default_version = default_config.get("app", {}).get("version")
-    if default_version:
-        config.setdefault("app", {})["version"] = default_version
+    # These describe the installed application itself, so they follow the
+    # version-controlled defaults even when upgrading a legacy config.json.
+    default_app = default_config.get("app", {})
+    if default_app:
+        app = config.setdefault("app", {})
+        for key in ("name", "version", "system_prompt"):
+            if key in default_app:
+                app[key] = default_app[key]
 
     return config
 
