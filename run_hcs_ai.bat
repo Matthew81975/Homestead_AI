@@ -19,5 +19,5 @@ if exist "update_hcs.ps1" (
 )
 
 start "HCS-AI Server" ".venv\Scripts\python.exe" -m hcs_ai.server_tree
-timeout /t 2 /nobreak >nul
+timeout /t 5 /nobreak >nul
 ".venv\Scripts\python.exe" -m hcs_ai.gui_tree
