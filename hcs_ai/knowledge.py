@@ -2,6 +2,7 @@ from pathlib import Path
 import re
 from .db import connect
 from .config import load_config
+from .knowledge_tree import register_file_artifact, classify_artifact
 
 TEXT_EXTENSIONS = {".txt", ".md", ".py", ".json", ".csv", ".log", ".yaml", ".yml", ".toml"}
 SUPPORTED_EXTENSIONS = TEXT_EXTENSIONS | {".pdf"}
@@ -18,6 +19,15 @@ def chunk_text(text: str, size: int, overlap: int):
         start = max(start + 1, end - overlap)
     return out
 
+
+def _read_supported_file(path: Path) -> str:
+    if path.suffix.lower() == ".pdf":
+        from pypdf import PdfReader
+        reader = PdfReader(str(path))
+        return "\n\n".join((page.extract_text() or "") for page in reader.pages)
+    return path.read_text(encoding="utf-8", errors="ignore")
+
+
 def import_path(path_str: str) -> dict:
     path = Path(path_str).expanduser().resolve()
     if not path.exists():
@@ -30,17 +40,15 @@ def import_path(path_str: str) -> dict:
     ]
     imported = 0
     chunks_total = 0
+    classified = 0
+    classification_errors = []
+    artifacts = []
     with connect() as con:
         for p in files:
             if p.suffix.lower() not in SUPPORTED_EXTENSIONS:
                 continue
             try:
-                if p.suffix.lower() == ".pdf":
-                    from pypdf import PdfReader
-                    reader = PdfReader(str(p))
-                    text = "\n\n".join((page.extract_text() or "") for page in reader.pages)
-                else:
-                    text = p.read_text(encoding="utf-8", errors="ignore")
+                text = _read_supported_file(p)
             except Exception:
                 continue
             if not text.strip():
@@ -54,7 +62,32 @@ def import_path(path_str: str) -> dict:
                 )
             imported += 1
             chunks_total += len(chunks)
-    return {"files_imported": imported, "chunks": chunks_total}
+
+            try:
+                artifact_id = register_file_artifact(p)
+                classification = classify_artifact(
+                    artifact_id=artifact_id,
+                    title=p.name,
+                    artifact_type=p.suffix.lower().lstrip(".") or "file",
+                    text=text,
+                    metadata={"path": str(p), "extension": p.suffix.lower()},
+                )
+                classified += 1
+                artifacts.append({
+                    "artifact_id": artifact_id,
+                    "path": str(p),
+                    "links": classification.get("linked", []),
+                    "pending_review_node_ids": classification.get("pending_review_node_ids", []),
+                })
+            except Exception as exc:
+                classification_errors.append({"path": str(p), "error": str(exc)})
+    return {
+        "files_imported": imported,
+        "chunks": chunks_total,
+        "artifacts_classified": classified,
+        "classification_errors": classification_errors,
+        "artifacts": artifacts,
+    }
 
 def _tokens(s: str):
     return set(re.findall(r"[A-Za-z0-9_]{2,}", s.lower()))
