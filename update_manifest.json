@@ -9,6 +9,7 @@
     "hcs_ai/__init__.py",
     "hcs_ai/config.py",
     "hcs_ai/db.py",
+    "hcs_ai/desktop_host.py",
     "hcs_ai/engine.py",
     "hcs_ai/gui.py",
     "hcs_ai/gui_tree.py",
