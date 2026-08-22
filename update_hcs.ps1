@@ -14,12 +14,6 @@ $UpdateRoot = Join-Path $Root ".hcs-update"
 $StatePath = Join-Path $UpdateRoot "state.json"
 $Headers = @{ "User-Agent" = "HCS-AI-Updater"; "Accept" = "application/vnd.github+json" }
 
-# These belong to the local machine and must never be replaced by a program update.
-$PreserveTopLevel = @(
-    ".git", ".github", ".venv", ".hcs-update", "data", "models", "runtime",
-    "config.json", ".env", "secrets.json"
-)
-
 function Write-State([hashtable]$state) {
     New-Item -ItemType Directory -Force -Path $UpdateRoot | Out-Null
     $state | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 -Path $StatePath
@@ -37,16 +31,46 @@ function Read-State {
     }
 }
 
+function Ensure-Parent([string]$path) {
+    $parent = Split-Path -Parent $path
+    if ($parent) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+}
+
+function Assert-SafeRelativePath([string]$path) {
+    if ([string]::IsNullOrWhiteSpace($path)) { throw "Update manifest contained an empty path." }
+    $p = $path.Replace("\", "/").TrimStart("./")
+    if ($p -match "^[A-Za-z]:" -or $p.StartsWith("/") -or $p -match "(^|/)\.\.(/|$)") {
+        throw "Unsafe update path: $path"
+    }
+
+    $protectedExact = @("config.json", ".env", "secrets.json")
+    $protectedPrefixes = @(".git/", ".github/", ".venv/", ".hcs-update/", "data/", "models/", "runtime/")
+    if ($protectedExact -contains $p) { throw "Update manifest attempted to replace protected local file: $p" }
+    foreach ($prefix in $protectedPrefixes) {
+        if ($p.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Update manifest attempted to replace protected local path: $p"
+        }
+    }
+    return $p
+}
+
+function Get-RawUrl([string]$sha, [string]$path) {
+    $encoded = (($path -split "/") | ForEach-Object { [uri]::EscapeDataString($_) }) -join "/"
+    return "https://raw.githubusercontent.com/$RepoOwner/$RepoName/$sha/$encoded"
+}
+
 function Restore-Backup([string]$backupDir) {
     $manifestPath = Join-Path $backupDir "manifest.json"
     if (-not (Test-Path $manifestPath)) { throw "Rollback manifest not found: $manifestPath" }
     $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
 
     foreach ($entry in $manifest.entries) {
-        $target = Join-Path $Root $entry.name
+        $relative = [string]$entry.path
+        $target = Join-Path $Root ($relative -replace "/", "\")
         if (Test-Path $target) { Remove-Item $target -Recurse -Force }
         if ($entry.existed) {
-            $saved = Join-Path $backupDir $entry.name
+            $saved = Join-Path $backupDir ($relative -replace "/", "\")
+            Ensure-Parent $target
             if (Test-Path $saved) { Copy-Item $saved $target -Recurse -Force }
         }
     }
@@ -68,7 +92,7 @@ if ($Rollback) {
     }
     Write-Host "Rolling HCS-AI back to the previous program files..."
     Restore-Backup $state.last_backup
-    if (Test-Path ".venv\Scripts\python.exe") {
+    if (Test-Path ".venv\Scripts\python.exe" -and Test-Path "requirements.txt") {
         & ".venv\Scripts\python.exe" -m pip install -r requirements.txt
     }
     $state.installed_sha = $state.previous_sha
@@ -106,45 +130,64 @@ if (-not $Force -and $state.installed_sha -eq $latestSha) {
 }
 
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$tempBase = Join-Path ([IO.Path]::GetTempPath()) ("hcs-update-" + [guid]::NewGuid())
-$zipPath = "$tempBase.zip"
-$extractDir = "$tempBase-extracted"
+$tempDir = Join-Path ([IO.Path]::GetTempPath()) ("hcs-update-" + [guid]::NewGuid())
 $backupDir = Join-Path $UpdateRoot ("backup-" + $stamp)
 
 try {
-    Write-Host "HCS-AI update available. Downloading commit $($latestSha.Substring(0, 8))..."
-    # Download the exact commit we checked, not a moving branch ZIP.
-    $archiveUrl = "https://github.com/$RepoOwner/$RepoName/archive/$latestSha.zip"
-    Invoke-WebRequest -Headers $Headers -Uri $archiveUrl -OutFile $zipPath -TimeoutSec 120
-    Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
+    Write-Host "HCS-AI update available. Reading update manifest for commit $($latestSha.Substring(0, 8))..."
+    $manifestUrl = Get-RawUrl $latestSha "update_manifest.json"
+    $updateManifest = Invoke-RestMethod -Headers $Headers -Uri $manifestUrl -TimeoutSec 30
+    $files = @($updateManifest.files)
+    $deletions = @($updateManifest.delete)
+    if ($files.Count -eq 0) { throw "The HCS-AI update manifest did not contain any program files." }
 
-    $sourceRoot = Get-ChildItem $extractDir -Directory | Select-Object -First 1
-    if (-not $sourceRoot) { throw "Downloaded HCS-AI archive was empty." }
-    if ($sourceRoot.Name -notmatch [regex]::Escape($latestSha.Substring(0, 8))) {
-        throw "Downloaded archive did not match the expected HCS-AI commit."
+    New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
+
+    $safeFiles = @()
+    foreach ($entry in $files) {
+        $path = if ($entry -is [string]) { [string]$entry } else { [string]$entry.path }
+        $path = Assert-SafeRelativePath $path
+        $safeFiles += $path
+        $tempTarget = Join-Path $tempDir ($path -replace "/", "\")
+        Ensure-Parent $tempTarget
+        Write-Host "Downloading $path"
+        Invoke-WebRequest -Headers $Headers -Uri (Get-RawUrl $latestSha $path) -OutFile $tempTarget -TimeoutSec 60
+    }
+
+    $safeDeletions = @()
+    foreach ($entry in $deletions) {
+        $path = if ($entry -is [string]) { [string]$entry } else { [string]$entry.path }
+        $safeDeletions += (Assert-SafeRelativePath $path)
     }
 
     New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
     $manifestEntries = @()
+    $allTouched = @($safeFiles + $safeDeletions | Select-Object -Unique)
 
-    foreach ($item in Get-ChildItem $sourceRoot.FullName -Force) {
-        if ($PreserveTopLevel -contains $item.Name) { continue }
-        $target = Join-Path $Root $item.Name
+    foreach ($path in $allTouched) {
+        $target = Join-Path $Root ($path -replace "/", "\")
         $existed = Test-Path $target
-        $manifestEntries += [pscustomobject]@{ name = $item.Name; existed = $existed }
+        $manifestEntries += [pscustomobject]@{ path = $path; existed = $existed }
         if ($existed) {
-            Copy-Item $target (Join-Path $backupDir $item.Name) -Recurse -Force
+            $saved = Join-Path $backupDir ($path -replace "/", "\")
+            Ensure-Parent $saved
+            Copy-Item $target $saved -Recurse -Force
         }
     }
 
     @{ entries = $manifestEntries } | ConvertTo-Json -Depth 6 |
         Set-Content -Encoding UTF8 (Join-Path $backupDir "manifest.json")
 
-    foreach ($item in Get-ChildItem $sourceRoot.FullName -Force) {
-        if ($PreserveTopLevel -contains $item.Name) { continue }
-        $target = Join-Path $Root $item.Name
+    foreach ($path in $safeFiles) {
+        $target = Join-Path $Root ($path -replace "/", "\")
+        $source = Join-Path $tempDir ($path -replace "/", "\")
+        Ensure-Parent $target
+        Copy-Item $source $target -Force
+    }
+
+    foreach ($path in $safeDeletions) {
+        $target = Join-Path $Root ($path -replace "/", "\")
         if (Test-Path $target) { Remove-Item $target -Recurse -Force }
-        Copy-Item $item.FullName $target -Recurse -Force
     }
 
     if (-not (Test-Path ".venv\Scripts\python.exe")) {
@@ -191,8 +234,7 @@ try {
         }
     }
 } finally {
-    Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
-    Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 exit 0
