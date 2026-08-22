@@ -14,6 +14,7 @@ $UpdateRoot = Join-Path $Root ".hcs-update"
 $StatePath = Join-Path $UpdateRoot "state.json"
 $Headers = @{ "User-Agent" = "HCS-AI-Updater"; "Accept" = "application/vnd.github+json" }
 
+# These belong to the local machine and must never be replaced by a program update.
 $PreserveTopLevel = @(
     ".git", ".github", ".venv", ".hcs-update", "data", "models", "runtime",
     "config.json", ".env", "secrets.json"
@@ -48,6 +49,14 @@ function Restore-Backup([string]$backupDir) {
             $saved = Join-Path $backupDir $entry.name
             if (Test-Path $saved) { Copy-Item $saved $target -Recurse -Force }
         }
+    }
+}
+
+function Prune-OldBackups {
+    $backups = @(Get-ChildItem $UpdateRoot -Directory -Filter "backup-*" -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending)
+    if ($backups.Count -gt 3) {
+        $backups | Select-Object -Skip 3 | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -103,20 +112,23 @@ $extractDir = "$tempBase-extracted"
 $backupDir = Join-Path $UpdateRoot ("backup-" + $stamp)
 
 try {
-    Write-Host "HCS-AI update available. Downloading..."
-    $archiveUrl = "https://github.com/$RepoOwner/$RepoName/archive/refs/heads/$Branch.zip"
+    Write-Host "HCS-AI update available. Downloading commit $($latestSha.Substring(0, 8))..."
+    # Download the exact commit we checked, not a moving branch ZIP.
+    $archiveUrl = "https://github.com/$RepoOwner/$RepoName/archive/$latestSha.zip"
     Invoke-WebRequest -Headers $Headers -Uri $archiveUrl -OutFile $zipPath -TimeoutSec 120
     Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
 
     $sourceRoot = Get-ChildItem $extractDir -Directory | Select-Object -First 1
     if (-not $sourceRoot) { throw "Downloaded HCS-AI archive was empty." }
+    if ($sourceRoot.Name -notmatch [regex]::Escape($latestSha.Substring(0, 8))) {
+        throw "Downloaded archive did not match the expected HCS-AI commit."
+    }
 
     New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
     $manifestEntries = @()
 
     foreach ($item in Get-ChildItem $sourceRoot.FullName -Force) {
         if ($PreserveTopLevel -contains $item.Name) { continue }
-        if ($item.Name -eq "config.default.json") { }
         $target = Join-Path $Root $item.Name
         $existed = Test-Path $target
         $manifestEntries += [pscustomobject]@{ name = $item.Name; existed = $existed }
@@ -125,7 +137,8 @@ try {
         }
     }
 
-    @{ entries = $manifestEntries } | ConvertTo-Json -Depth 6 | Set-Content -Encoding UTF8 (Join-Path $backupDir "manifest.json")
+    @{ entries = $manifestEntries } | ConvertTo-Json -Depth 6 |
+        Set-Content -Encoding UTF8 (Join-Path $backupDir "manifest.json")
 
     foreach ($item in Get-ChildItem $sourceRoot.FullName -Force) {
         if ($PreserveTopLevel -contains $item.Name) { continue }
@@ -155,6 +168,7 @@ try {
     $state.last_status = "success"
     $state.last_update = (Get-Date).ToString("o")
     Write-State $state
+    Prune-OldBackups
 
     Write-Host "HCS-AI updated successfully."
 } catch {
