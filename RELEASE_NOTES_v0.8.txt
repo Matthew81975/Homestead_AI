@@ -1,0 +1,38 @@
+HCS-AI v0.8.0
+===============
+
+Self-updating installation
+--------------------------
+- HCS-AI now checks Matthew81975/Homestead_AI on GitHub before normal startup.
+- Updates are downloaded by exact commit SHA; Git does not need to be installed.
+- Program files are updated in place, so normal releases no longer require reinstalling HCS-AI.
+- The existing .venv is retained and requirements.txt is synchronized after an update.
+- If GitHub is unavailable, HCS-AI starts the currently installed version normally.
+
+Local data protection
+---------------------
+The updater preserves machine-local content including:
+- .venv/
+- data/
+- models/
+- runtime/
+- config.json
+- .env and secrets.json
+
+Configuration
+-------------
+- config.default.json is version-controlled and contains application defaults.
+- config.json is now local-only and is never overwritten by automatic updates.
+- Application-owned metadata such as HCS version and system prompt follows the installed release.
+
+Rollback protection
+-------------------
+- Before replacing program files, HCS-AI stores a rollback snapshot in .hcs-update/.
+- The updater compiles the Python package, loads configuration, and initializes the database as a self-test.
+- Failed updates automatically restore the previous program files.
+- The three newest rollback snapshots are retained.
+- Manual rollback: powershell -NoProfile -ExecutionPolicy Bypass -File update_hcs.ps1 -Rollback
+
+One-time upgrade from v0.7.x
+----------------------------
+An existing v0.7.x installation does not yet know how to call the updater. Bootstrap it once by placing update_hcs.ps1 in the existing HCS-AI folder and running it with -Force. After that update completes, the normal HCS-AI shortcut performs future update checks automatically.

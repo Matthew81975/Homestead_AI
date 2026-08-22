@@ -3,7 +3,7 @@ Set-Location $PSScriptRoot
 $installLog = Join-Path $PSScriptRoot "install.log"
 Start-Transcript -Path $installLog -Append | Out-Null
 
-Write-Host "HCS-AI v0.7 installer"
+Write-Host "HCS-AI v0.8 installer"
 Write-Host "---------------------"
 
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
@@ -16,6 +16,12 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if (-not (Test-Path ".venv")) { python -m venv .venv }
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+# config.default.json is version-controlled. config.json belongs to this PC and
+# is preserved across automatic updates.
+if (-not (Test-Path "config.json") -and (Test-Path "config.default.json")) {
+    Copy-Item "config.default.json" "config.json"
+}
 
 # Desktop + Start Menu shortcuts are standard for HCS apps.
 $ws = New-Object -ComObject WScript.Shell
@@ -31,6 +37,7 @@ foreach ($linkPath in @((Join-Path $desktop "HCS-AI.lnk"), (Join-Path $startMenu
 }
 Write-Host ""
 Write-Host "Installation complete. Desktop and Start Menu shortcuts created."
+Write-Host "Future program updates will be checked automatically when HCS-AI starts."
 $answer = Read-Host "Install the internal llama.cpp engine and recommended Qwen model now? [Y/n]"
 if ([string]::IsNullOrWhiteSpace($answer) -or $answer -match "^[Yy]") {
     try {

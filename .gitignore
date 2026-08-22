@@ -4,7 +4,7 @@ venv/
 env/
 
 # Python cache
-__pychache__/
+__pycache__/
 *.py[cod]
 
 # AI models / large model files
@@ -19,12 +19,16 @@ data/
 *.sqlite
 *.sqlite3
 
+# Self-updater state and rollback backups
+.hcs-update/
+
 # Logs and temporary files
 *.log
 *.tmp
 *.temp
 
 # Secrets / local configuration
+config.json
 .env
 .env.*
 secrets.json
@@ -33,10 +37,9 @@ secrets.json
 .vscode/
 .idea/
 
-# Windwos
+# Windows
 Thumbs.db
 Desktop.ini
 
-#Downloaded/compiled
-runtime dependencies
+# Downloaded/compiled runtime dependencies
 runtime/llama.cpp/

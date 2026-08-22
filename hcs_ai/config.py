@@ -2,16 +2,54 @@ from pathlib import Path
 import json
 
 ROOT = Path(__file__).resolve().parent.parent
-CONFIG_PATH = ROOT / "config.json"
+DEFAULT_CONFIG_PATH = ROOT / "config.default.json"
+LOCAL_CONFIG_PATH = ROOT / "config.json"
+CONFIG_PATH = LOCAL_CONFIG_PATH
+
+
+def _deep_merge(base: dict, override: dict) -> dict:
+    merged = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
 
 def load_config() -> dict:
-    return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    default_config = {}
+    local_config = {}
+
+    if DEFAULT_CONFIG_PATH.exists():
+        default_config = json.loads(DEFAULT_CONFIG_PATH.read_text(encoding="utf-8"))
+
+    if LOCAL_CONFIG_PATH.exists():
+        local_config = json.loads(LOCAL_CONFIG_PATH.read_text(encoding="utf-8"))
+
+    if not default_config and not local_config:
+        raise FileNotFoundError("No HCS-AI configuration file was found.")
+
+    config = _deep_merge(default_config, local_config)
+
+    # These describe the installed application itself, so they follow the
+    # version-controlled defaults even when upgrading a legacy config.json.
+    default_app = default_config.get("app", {})
+    if default_app:
+        app = config.setdefault("app", {})
+        for key in ("name", "version", "system_prompt"):
+            if key in default_app:
+                app[key] = default_app[key]
+
+    return config
 
 
 def save_config(config: dict) -> None:
-    temp = CONFIG_PATH.with_suffix(".json.tmp")
+    # Save only to the local configuration file. The default configuration is
+    # version-controlled and can safely change during automatic updates.
+    temp = LOCAL_CONFIG_PATH.with_suffix(".json.tmp")
     temp.write_text(json.dumps(config, indent=2), encoding="utf-8")
-    temp.replace(CONFIG_PATH)
+    temp.replace(LOCAL_CONFIG_PATH)
 
 
 def llm_config() -> dict:
