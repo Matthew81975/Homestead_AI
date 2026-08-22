@@ -38,14 +38,23 @@ function Ensure-Parent([string]$path) {
 
 function Assert-SafeRelativePath([string]$path) {
     if ([string]::IsNullOrWhiteSpace($path)) { throw "Update manifest contained an empty path." }
-    $p = $path.Replace("\", "/").TrimStart("./")
+    $p = $path.Replace("\", "/")
+    while ($p.StartsWith("./")) { $p = $p.Substring(2) }
     if ($p -match "^[A-Za-z]:" -or $p.StartsWith("/") -or $p -match "(^|/)\.\.(/|$)") {
         throw "Unsafe update path: $path"
     }
 
-    $protectedExact = @("config.json", ".env", "secrets.json")
+    # Machine-local state and maintenance/bootstrap scripts are intentionally
+    # outside routine application updates. Maintenance scripts can be refreshed
+    # manually from the repository when needed.
+    $protectedExact = @(
+        "config.json", ".env", "secrets.json",
+        ".git", ".github", ".venv", ".hcs-update", "data", "models", "runtime",
+        "update_hcs.ps1", "install.ps1", "install.bat", "setup_internal_ai.ps1",
+        "BOOTSTRAP_SELF_UPDATE.bat"
+    )
     $protectedPrefixes = @(".git/", ".github/", ".venv/", ".hcs-update/", "data/", "models/", "runtime/")
-    if ($protectedExact -contains $p) { throw "Update manifest attempted to replace protected local file: $p" }
+    if ($protectedExact -contains $p) { throw "Update manifest attempted to replace protected local/maintenance file: $p" }
     foreach ($prefix in $protectedPrefixes) {
         if ($p.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
             throw "Update manifest attempted to replace protected local path: $p"
@@ -143,6 +152,8 @@ try {
 
     New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
 
+    # Download every new file before changing the installed application. If a
+    # security product or network error blocks a file, the current HCS remains untouched.
     $safeFiles = @()
     foreach ($entry in $files) {
         $path = if ($entry -is [string]) { [string]$entry } else { [string]$entry.path }
