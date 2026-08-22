@@ -19,7 +19,8 @@
     "hcs_ai/ports.py",
     "hcs_ai/server.py",
     "hcs_ai/server_tree.py",
-    "hcs_ai/tools.py"
+    "hcs_ai/tools.py",
+    "hcs_ai/wait_for_server.py"
   ],
   "delete": []
 }
