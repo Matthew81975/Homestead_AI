@@ -19,5 +19,11 @@ if exist "update_hcs.ps1" (
 )
 
 start "HCS-AI Server" ".venv\Scripts\python.exe" -m hcs_ai.server_tree
-timeout /t 5 /nobreak >nul
+".venv\Scripts\python.exe" -m hcs_ai.wait_for_server 0.8.3
+if errorlevel 1 (
+  echo.
+  echo HCS-AI server did not become ready. The GUI will not attach to a stale server.
+  pause
+  exit /b 1
+)
 ".venv\Scripts\python.exe" -m hcs_ai.gui_tree
