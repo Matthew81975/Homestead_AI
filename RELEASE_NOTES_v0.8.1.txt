@@ -1,0 +1,15 @@
+HCS-AI v0.8.1
+================
+
+Updater compatibility hotfix
+----------------------------
+- Routine updates no longer download and expand the entire GitHub repository ZIP.
+- HCS-AI now reads update_manifest.json from the exact GitHub commit being installed.
+- Only application/runtime Python files and safe launcher/config files listed in the manifest are downloaded.
+- Installer, bootstrap, model/runtime setup, updater, local data, models, virtual environment, and secrets are excluded from routine updates.
+- All replacement files are downloaded before the installed application is modified.
+- Rollback snapshots remain in place and the existing self-test still runs before an update is accepted.
+
+Why this changed
+----------------
+Some endpoint-security products can quarantine PowerShell maintenance scripts while Windows Expand-Archive is extracting a repository ZIP. That can make ZIP extraction fail even though the HCS application files themselves are safe. Selective file updates avoid extracting those unrelated maintenance scripts during normal HCS startup.
