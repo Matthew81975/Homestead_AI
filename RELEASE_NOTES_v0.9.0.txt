@@ -1,0 +1,23 @@
+HCS-AI v0.9.0
+=============
+
+Windows desktop host
+--------------------
+- HCS-AI can start automatically when the user signs into Windows.
+- Closing the main HCS window hides it to the Windows system tray instead of stopping it.
+- Tray menu provides Open HCS, Check for Updates, Restart HCS, Start with Windows, and Exit HCS (free memory).
+
+Updates
+-------
+- Check for Updates compares the installed commit with GitHub main.
+- When an update is available, HCS prompts to restart and install it through the existing safe updater.
+
+Memory / full shutdown
+----------------------
+- Exit HCS (free memory) terminates the HCS server and its entire descendant process tree, including the managed local inference process, so model/server RAM is released.
+
+Startup behavior
+----------------
+- Normal manual launch opens the GUI.
+- Windows-login launch starts HCS minimized to the tray.
+- Start with Windows can be toggled directly from the tray menu.
