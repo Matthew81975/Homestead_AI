@@ -1,5 +1,4 @@
 import argparse
-import ctypes
 import json
 import os
 import subprocess
@@ -7,8 +6,8 @@ import sys
 import threading
 import time
 import urllib.request
-from pathlib import Path
 
+import psutil
 import pystray
 from PIL import Image, ImageDraw
 from tkinter import messagebox
@@ -93,6 +92,36 @@ def installed_commit_sha():
         return ""
 
 
+def terminate_process_tree(pid):
+    """Terminate a process and all descendants so Exit HCS releases model/server RAM."""
+    try:
+        parent = psutil.Process(pid)
+    except psutil.Error:
+        return
+    children = parent.children(recursive=True)
+    for proc in children:
+        try:
+            proc.terminate()
+        except psutil.Error:
+            pass
+    gone, alive = psutil.wait_procs(children, timeout=4)
+    for proc in alive:
+        try:
+            proc.kill()
+        except psutil.Error:
+            pass
+    try:
+        parent.terminate()
+        parent.wait(timeout=4)
+    except psutil.TimeoutExpired:
+        try:
+            parent.kill()
+        except psutil.Error:
+            pass
+    except psutil.Error:
+        pass
+
+
 class DesktopHost:
     def __init__(self, minimized=False):
         self.minimized = minimized
@@ -133,9 +162,8 @@ class DesktopHost:
         raise TimeoutError("HCS-AI server did not become ready within 30 seconds.")
 
     def open_window(self, *_):
-        if not self.app:
-            return
-        self.app.after(0, self._show_window)
+        if self.app:
+            self.app.after(0, self._show_window)
 
     def _show_window(self):
         self.app.deiconify()
@@ -156,18 +184,14 @@ class DesktopHost:
         try:
             latest = latest_commit_sha()
             installed = installed_commit_sha()
-            available = bool(latest and latest != installed)
-            if available:
+            if latest and latest != installed:
                 self.app.after(0, self._prompt_restart_for_update)
             else:
                 self.app.after(0, lambda: messagebox.showinfo("HCS-AI Updates", "HCS-AI is up to date."))
         except Exception as exc:
-            self.app.after(
-                0,
-                lambda msg=str(exc): messagebox.showwarning(
-                    "HCS-AI Updates", f"Could not check for updates.\n\n{msg}"
-                ),
-            )
+            self.app.after(0, lambda msg=str(exc): messagebox.showwarning(
+                "HCS-AI Updates", f"Could not check for updates.\n\n{msg}"
+            ))
 
     def _prompt_restart_for_update(self):
         if messagebox.askyesno(
@@ -177,9 +201,8 @@ class DesktopHost:
             self.restart()
 
     def toggle_startup(self, *_):
-        enabled = startup_enabled()
         try:
-            set_startup(not enabled)
+            set_startup(not startup_enabled())
             if self.icon:
                 self.icon.update_menu()
         except Exception as exc:
@@ -192,14 +215,11 @@ class DesktopHost:
         self._stop_children()
         batch = ROOT / "run_hcs_ai.bat"
         flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-        subprocess.Popen(
-            ["cmd.exe", "/c", "start", "", str(batch)],
-            cwd=str(ROOT),
-            creationflags=flags,
-        )
+        subprocess.Popen(["cmd.exe", "/c", "start", "", str(batch)], cwd=str(ROOT), creationflags=flags)
         self._finish_exit()
 
     def exit(self, *_):
+        """Fully stop HCS, including the local model, to release its memory."""
         if self.exiting:
             return
         self.exiting = True
@@ -208,11 +228,7 @@ class DesktopHost:
 
     def _stop_children(self):
         if self.server and self.server.poll() is None:
-            self.server.terminate()
-            try:
-                self.server.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.server.kill()
+            terminate_process_tree(self.server.pid)
 
     def _finish_exit(self):
         if self.icon:
@@ -232,18 +248,13 @@ class DesktopHost:
             pystray.MenuItem("Check for Updates", self.check_for_updates),
             pystray.MenuItem("Restart HCS", self.restart),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem(
-                "Start with Windows",
-                self.toggle_startup,
-                checked=lambda _item: startup_enabled(),
-            ),
-            pystray.MenuItem("Exit HCS", self.exit),
+            pystray.MenuItem("Start with Windows", self.toggle_startup, checked=lambda _item: startup_enabled()),
+            pystray.MenuItem("Exit HCS (free memory)", self.exit),
         )
         self.icon = pystray.Icon("HCS-AI", _tray_image(), "HCS-AI", menu)
         threading.Thread(target=self.icon.run, daemon=True).start()
 
     def run(self):
-        # Enable Windows-login startup by default. The tray menu can disable it.
         try:
             if os.name == "nt" and not startup_enabled():
                 set_startup(True)
@@ -251,10 +262,7 @@ class DesktopHost:
             pass
 
         self.start_server()
-        base, health = self.wait_for_server()
-
-        # gui.py reads the exact endpoint via data/server_port.json; by the time
-        # App is created the newly launched server has already passed health/version checks.
+        _base, health = self.wait_for_server()
         self.app = App()
         self.app.title(f"HCS-AI {health.get('version', self.expected_version)}")
         self.app.protocol("WM_DELETE_WINDOW", self.hide_window)
