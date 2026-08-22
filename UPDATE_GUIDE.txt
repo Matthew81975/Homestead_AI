@@ -1,0 +1,34 @@
+HCS-AI Automatic Update Guide
+=============================
+
+Normal use (v0.8.0 and newer)
+-----------------------------
+Start HCS-AI from the normal desktop shortcut. Before the server and GUI start, HCS-AI checks the main branch of Matthew81975/Homestead_AI. If a newer commit exists, the program updates itself in place, synchronizes Python dependencies, runs a self-test, and then starts.
+
+If the computer is offline or GitHub cannot be reached, HCS-AI starts the currently installed version.
+
+Protected local content
+-----------------------
+Automatic updates do not replace .venv, data, models, runtime, config.json, .env, secrets.json, or .hcs-update.
+
+Manual update
+-------------
+powershell -NoProfile -ExecutionPolicy Bypass -File update_hcs.ps1 -Force
+
+Manual rollback
+---------------
+powershell -NoProfile -ExecutionPolicy Bypass -File update_hcs.ps1 -Rollback
+
+Skip one update check
+---------------------
+From Command Prompt:
+set HCS_SKIP_UPDATE=1
+run_hcs_ai.bat
+
+Upgrading an existing v0.7.x installation
+-----------------------------------------
+The old v0.7.x launcher predates automatic updates, so it needs a one-time bootstrap. Download/copy update_hcs.ps1 into the existing HCS-AI directory and run:
+
+powershell -NoProfile -ExecutionPolicy Bypass -File update_hcs.ps1 -Force
+
+The update replaces run_hcs_ai.bat with the self-updating launcher. After that, use the normal HCS-AI shortcut.
