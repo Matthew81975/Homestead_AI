@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Matthew's Home</title>
+  <style>
+    :root {
+      --bg:#eef2f7; --panel:rgba(255,255,255,.80); --text:#172033;
+      --muted:#667085; --accent:#356df3; --accent-hover:#2459d6;
+      --border:rgba(23,32,51,.10); --shadow:0 18px 45px rgba(31,45,77,.12);
+    }
+    @media (prefers-color-scheme:dark) {
+      :root {
+        --bg:#0e1420; --panel:rgba(24,33,49,.84); --text:#edf2f7;
+        --muted:#a8b3c7; --accent:#6d97ff; --accent-hover:#89aaff;
+        --border:rgba(255,255,255,.10); --shadow:0 18px 45px rgba(0,0,0,.28);
+      }
+    }
+    * { box-sizing:border-box; }
+    body {
+      margin:0; min-height:100vh; padding:28px;
+      font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      color:var(--text);
+      background:
+        radial-gradient(circle at top left,rgba(53,109,243,.18),transparent 32%),
+        radial-gradient(circle at bottom right,rgba(78,205,196,.12),transparent 30%),
+        var(--bg);
+    }
+    .dashboard { width:min(1100px,100%); margin:auto; display:grid; gap:20px; }
+    .hero,.panel {
+      background:var(--panel); border:1px solid var(--border); box-shadow:var(--shadow);
+      backdrop-filter:blur(16px); border-radius:24px;
+    }
+    .hero { padding:38px; text-align:center; }
+    #clock { font-size:clamp(3rem,8vw,6.5rem); font-weight:750; letter-spacing:-.06em; line-height:1; }
+    #date { margin-top:12px; color:var(--muted); font-size:1.05rem; }
+    .search { margin:30px auto 0; max-width:700px; display:flex; gap:10px; }
+    .search input {
+      flex:1; min-width:0; padding:16px 18px; border-radius:14px;
+      border:1px solid var(--border); background:rgba(255,255,255,.08);
+      color:var(--text); font-size:1rem; outline:none;
+    }
+    button,.shortcut { border:0; border-radius:14px; cursor:pointer; transition:.15s ease; }
+    button:hover,.shortcut:hover { transform:translateY(-2px); }
+    .search button { padding:0 22px; background:var(--accent); color:#fff; font-weight:700; }
+    .search button:hover { background:var(--accent-hover); }
+    .grid { display:grid; grid-template-columns:1.2fr .8fr; gap:20px; }
+    .panel { padding:24px; }
+    h2 { margin:0 0 18px; font-size:1rem; letter-spacing:.02em; text-transform:uppercase; color:var(--muted); }
+    .shortcuts { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+    .shortcut {
+      display:block; padding:18px 14px; text-align:center; text-decoration:none;
+      color:var(--text); background:rgba(255,255,255,.07);
+      border:1px solid var(--border); font-weight:650;
+    }
+    .shortcut span { display:block; font-size:1.6rem; margin-bottom:7px; }
+    textarea {
+      width:100%; min-height:180px; resize:vertical; padding:15px; border-radius:14px;
+      border:1px solid var(--border); background:rgba(255,255,255,.06);
+      color:var(--text); font:inherit; line-height:1.5; outline:none;
+    }
+    .note-status,.reference-note,.footer { color:var(--muted); font-size:.85rem; }
+    .note-status { margin-top:10px; }
+    .footer { text-align:center; }
+    details {
+      border:1px solid var(--border); border-radius:14px; padding:12px 14px;
+      background:rgba(255,255,255,.035);
+    }
+    details + details { margin-top:12px; }
+    summary { cursor:pointer; font-weight:700; }
+    .reference-table { width:100%; border-collapse:collapse; margin-top:12px; font-size:.92rem; }
+    .reference-table th,.reference-table td {
+      padding:10px 12px; border:1px solid var(--border); text-align:left; vertical-align:top;
+    }
+    .reference-table th { background:rgba(53,109,243,.12); }
+    .reference-table tr:nth-child(even) { background:rgba(255,255,255,.035); }
+    .reference-note { margin:10px 0 0; line-height:1.45; }
+    @media (max-width:760px) {
+      .grid { grid-template-columns:1fr; }
+      .shortcuts { grid-template-columns:repeat(2,1fr); }
+      .hero { padding:28px 20px; }
+      .search { flex-direction:column; }
+      .search button { padding:15px; }
+    }
+
+    .plant-tools {
+      display:grid; grid-template-columns:1fr auto; gap:10px; margin:0 0 16px;
+    }
+    .plant-tools input,.plant-tools select {
+      padding:12px 14px; border-radius:12px; border:1px solid var(--border);
+      background:rgba(255,255,255,.06); color:var(--text); font:inherit;
+    }
+    .plant-badge {
+      display:inline-block; padding:3px 8px; border-radius:999px;
+      background:rgba(53,109,243,.12); font-size:.78rem; white-space:nowrap;
+    }
+    .plant-table-wrap { overflow-x:auto; }
+    .plant-table { min-width:920px; }
+    .plant-table td:first-child { font-weight:700; }
+    .plant-hidden { display:none !important; }
+    @media (max-width:760px) {
+      .plant-tools { grid-template-columns:1fr; }
+    }
+
+  </style>
+</head>
+<body>
+<main class="dashboard">
+  <section class="hero">
+    <div id="clock">--:--</div>
+    <div id="date">Loading date…</div>
+    <form class="search" action="https://www.google.com/search" method="get">
+      <input type="search" name="q" placeholder="Search the web…" aria-label="Search the web" autofocus>
+      <button type="submit">Search</button>
+    </form>
+  </section>
+
+  <section class="grid">
+    <div class="panel">
+      <h2>Quick Links</h2>
+      <div class="shortcuts">
+        <a class="shortcut" href="https://chatgpt.com"><span>🤖</span>ChatGPT</a>
+        <a class="shortcut" href="https://mail.google.com"><span>✉️</span>Gmail</a>
+        <a class="shortcut" href="https://calendar.google.com"><span>📅</span>Calendar</a>
+        <a class="shortcut" href="https://drive.google.com"><span>📁</span>Drive</a>
+        <a class="shortcut" href="https://www.youtube.com"><span>▶️</span>YouTube</a>
+        <a class="shortcut" href="https://github.com"><span>💻</span>GitHub</a>
+        <a class="shortcut"
+           href="file:///C:/Users/Home/OneDrive/Desktop/Matt%27s%20Laboratory/"
+           title="C:\Users\Home\OneDrive\Desktop\Matt's Laboratory">
+          <span>🧪</span>Matt's Laboratory
+        </a>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Scratch Pad</h2>
+      <textarea id="notes" placeholder="Ideas, reminders, calculations…"></textarea>
+      <div class="note-status" id="noteStatus">Saved automatically on this computer.</div>
+    </div>
+  </section>
+
+  <div class="panel">
+    <h2>Engineering &amp; Fabrication</h2>
+    <div class="shortcuts">
+      <a class="shortcut" href="https://www.pcbway.com"><span>🟩</span>PCBWay</a>
+      <a class="shortcut" href="https://jlcpcb.com"><span>🟦</span>JLCPCB</a>
+      <a class="shortcut" href="https://www.digikey.com"><span>🔌</span>DigiKey</a>
+      <a class="shortcut" href="https://www.mouser.com"><span>⚡</span>Mouser</a>
+      <a class="shortcut" href="https://www.mcmaster.com"><span>🔩</span>McMaster</a>
+      <a class="shortcut" href="https://openbuilds.com"><span>🛠️</span>OpenBuilds</a>
+      <a class="shortcut" href="https://cad.onshape.com"><span>📐</span>Onshape</a>
+      <a class="shortcut" href="https://www.freecad.org"><span>🧱</span>FreeCAD</a>
+      <a class="shortcut" href="https://www.kicad.org"><span>💡</span>KiCad</a>
+      <a class="shortcut" href="https://easyeda.com"><span>🔧</span>EasyEDA</a>
+      <a class="shortcut" href="https://grabcad.com/library"><span>📦</span>GrabCAD</a>
+      <a class="shortcut" href="https://www.traceparts.com"><span>📚</span>TraceParts</a>
+      <a class="shortcut" href="https://www.3dfindit.com"><span>🔍</span>3DfindIT</a>
+      <a class="shortcut" href="https://www.printables.com"><span>🖨️</span>Printables</a>
+      <a class="shortcut" href="https://www.thingiverse.com"><span>🌍</span>Thingiverse</a>
+      <a class="shortcut" href="https://github.com"><span>💻</span>GitHub</a>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Engineering Quick Reference</h2>
+
+    <details open>
+      <summary>📏 Unit Conversions</summary>
+      <table class="reference-table">
+        <tr><th>Conversion</th><th>Value</th></tr>
+        <tr><td>1 in</td><td>25.4 mm</td></tr>
+        <tr><td>1 ft</td><td>304.8 mm</td></tr>
+        <tr><td>1 m</td><td>3.28084 ft</td></tr>
+        <tr><td>1 lb</td><td>0.453592 kg</td></tr>
+        <tr><td>1 gal (US)</td><td>3.785 L</td></tr>
+        <tr><td>1 hp</td><td>746 W</td></tr>
+        <tr><td>1 PSI</td><td>6.895 kPa</td></tr>
+      </table>
+    </details>
+
+    <details>
+      <summary>🧱 Common Material Data</summary>
+      <table class="reference-table">
+        <tr><th>Material</th><th>Density (g/cm³)</th><th>Yield (MPa)</th></tr>
+        <tr><td>6061-T6 Aluminum</td><td>2.70</td><td>276</td></tr>
+        <tr><td>Mild Steel</td><td>7.85</td><td>250</td></tr>
+        <tr><td>304 Stainless</td><td>8.00</td><td>215</td></tr>
+        <tr><td>Copper</td><td>8.96</td><td>70</td></tr>
+        <tr><td>Brass</td><td>8.5</td><td>200</td></tr>
+      </table>
+    </details>
+
+    <details>
+      <summary>🧮 Common Formulas</summary>
+      <ul>
+        <li>Ohm's Law: V = I × R</li>
+        <li>Electrical Power: P = V × I</li>
+        <li>Mechanical Power: P = τω</li>
+        <li>Force: F = m × a</li>
+        <li>Torque: τ = Force × Radius</li>
+        <li>Circle Area: A = πr²</li>
+        <li>Cylinder Volume: V = πr²h</li>
+      </ul>
+    </details>
+
+    <details>
+      <summary>🔥 Common Material Melting Points</summary>
+      <table class="reference-table">
+        <tr><th>Material</th><th>°C</th><th>°F</th></tr>
+        <tr><td>Tin</td><td>232</td><td>450</td></tr>
+        <tr><td>Lead</td><td>327</td><td>621</td></tr>
+        <tr><td>Zinc</td><td>420</td><td>788</td></tr>
+        <tr><td>Aluminum</td><td>660</td><td>1,220</td></tr>
+        <tr><td>Magnesium</td><td>650</td><td>1,202</td></tr>
+        <tr><td>Brass</td><td>~900–940</td><td>~1,652–1,724</td></tr>
+        <tr><td>Bronze</td><td>~850–1,000</td><td>~1,562–1,832</td></tr>
+        <tr><td>Silver</td><td>962</td><td>1,763</td></tr>
+        <tr><td>Gold</td><td>1,064</td><td>1,948</td></tr>
+        <tr><td>Copper</td><td>1,085</td><td>1,984</td></tr>
+        <tr><td>Cast Iron</td><td>~1,150–1,200</td><td>~2,102–2,192</td></tr>
+        <tr><td>Mild Steel</td><td>~1,425–1,540</td><td>~2,597–2,804</td></tr>
+      </table>
+      <p class="reference-note">Melting point is not the same as a practical pouring or working temperature.</p>
+    </details>
+
+    <details>
+      <summary>🏺 Kiln, Forge &amp; Furnace Temperatures</summary>
+      <table class="reference-table">
+        <tr><th>Process</th><th>Typical °C</th><th>Typical °F</th></tr>
+        <tr><td>Food dehydrating</td><td>40–75</td><td>104–167</td></tr>
+        <tr><td>Wood drying oven</td><td>50–90</td><td>122–194</td></tr>
+        <tr><td>Powder coating cure</td><td>160–205</td><td>320–400</td></tr>
+        <tr><td>Lead-free soldering</td><td>217–250</td><td>423–482</td></tr>
+        <tr><td>Wood pyrolysis / biochar</td><td>350–700</td><td>662–1,292</td></tr>
+        <tr><td>Low-fire ceramics</td><td>1,000–1,150</td><td>1,832–2,102</td></tr>
+        <tr><td>Mid-fire ceramics</td><td>1,180–1,225</td><td>2,156–2,237</td></tr>
+        <tr><td>High-fire ceramics</td><td>1,260–1,305</td><td>2,300–2,381</td></tr>
+        <tr><td>Steel forging range</td><td>900–1,250</td><td>1,652–2,282</td></tr>
+        <tr><td>Forge welding</td><td>1,150–1,300</td><td>2,102–2,372</td></tr>
+        <tr><td>Iron / steel melting</td><td>1,450–1,650+</td><td>2,642–3,002+</td></tr>
+      </table>
+      <p class="reference-note">Kiln cones measure heatwork—temperature plus time—not temperature alone.</p>
+    </details>
+
+    <details>
+      <summary>🌐 Useful Online Calculators</summary>
+      <div class="shortcuts" style="margin-top:12px">
+        <a class="shortcut" href="https://www.omnicalculator.com"><span>🧮</span>Omni Calculator</a>
+        <a class="shortcut" href="https://www.engineeringtoolbox.com"><span>⚙️</span>Engineering Toolbox</a>
+        <a class="shortcut" href="https://www.rapidtables.com"><span>📐</span>RapidTables</a>
+        <a class="shortcut" href="https://www.calculator.net"><span>➗</span>Calculator.net</a>
+        <a class="shortcut" href="https://www.wolframalpha.com"><span>🧠</span>WolframAlpha</a>
+        <a class="shortcut" href="https://www.unitconverters.net"><span>📏</span>UnitConverters</a>
+        <a class="shortcut" href="https://www.blocklayer.com"><span>🏗️</span>Blocklayer</a>
+        <a class="shortcut" href="https://www.desmos.com/calculator"><span>📈</span>Desmos</a>
+        <a class="shortcut" href="https://ohmslawcalculator.com"><span>⚡</span>Ohm's Law</a>
+        <a class="shortcut" href="https://www.amesweb.info"><span>🔩</span>AmesWeb</a>
+        <a class="shortcut" href="https://www.matweb.com"><span>🧪</span>MatWeb</a>
+        <a class="shortcut" href="https://ptable.com"><span>⚛️</span>Periodic Table</a>
+      </div>
+    </details>
+  </div>
+
+
+  <div class="panel" id="plant-reference">
+    <h2>🌱 Plant &amp; Homestead Reference</h2>
+    <p class="reference-note">
+      Dates below are practical starting ranges for central and northwest Missouri. Weather, soil temperature,
+      variety and microclimate can shift planting by one to three weeks. “Days” generally means seed or transplant
+      to first harvest; always compare with the seed packet.
+    </p>
+
+    <div class="plant-tools">
+      <input id="plantSearch" type="search" placeholder="Search plants, months, uses, or notes…" aria-label="Search plant reference">
+      <select id="plantCategory" aria-label="Filter plant category">
+        <option value="all">All categories</option>
+        <option value="vegetable">Vegetables</option>
+        <option value="fruit">Fruit &amp; berries</option>
+        <option value="herb">Herbs</option>
+        <option value="cover">Cover crops</option>
+        <option value="greenhouse">Greenhouse &amp; tropical</option>
+        <option value="coppice">Coppice &amp; useful trees</option>
+      </select>
+    </div>
+
+    <details open>
+      <summary>🥕 Vegetable Planting Calendar</summary>
+      <div class="plant-table-wrap">
+      <table class="reference-table plant-table">
+        <thead><tr><th>Crop</th><th>Start / Plant</th><th>Harvest</th><th>Spacing</th><th>pH</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr data-cat="vegetable"><td>Asparagus</td><td>Plant crowns Apr 1–25</td><td>Light harvest year 2; full year 3+</td><td>12–18 in</td><td>6.5–7.5</td><td>Perennial bed; keep weed-free.</td></tr>
+          <tr data-cat="vegetable"><td>Beans, bush</td><td>Direct sow Apr 25–Jul 20</td><td>50–60 days</td><td>3–6 in</td><td>6.0–7.0</td><td>Succession sow every 2–3 weeks.</td></tr>
+          <tr data-cat="vegetable"><td>Beans, pole</td><td>Direct sow May 1–Jun 20</td><td>60–75 days</td><td>6–10 in</td><td>6.0–7.0</td><td>Provide a 6–8 ft trellis.</td></tr>
+          <tr data-cat="vegetable"><td>Beets</td><td>Mar 15–May 1; Jul 20–Aug 20</td><td>50–65 days</td><td>3–4 in</td><td>6.0–7.5</td><td>Thin seedlings; greens are edible.</td></tr>
+          <tr data-cat="vegetable"><td>Broccoli</td><td>Start indoors late Feb; transplant Mar 25–Apr 20; fall Jun–Jul</td><td>55–80 days from transplant</td><td>18–24 in</td><td>6.0–7.5</td><td>Cool-season crop; protect from cabbage worms.</td></tr>
+          <tr data-cat="vegetable"><td>Cabbage</td><td>Start indoors Feb; transplant Mar 20–Apr 15; fall Jun–Jul</td><td>60–100 days</td><td>18–24 in</td><td>6.0–7.5</td><td>Heavy feeder; rotate brassicas.</td></tr>
+          <tr data-cat="vegetable"><td>Carrots</td><td>Direct sow Mar 15–May 15; Jul 15–Aug 15</td><td>60–80 days</td><td>2–3 in</td><td>6.0–6.8</td><td>Loose, stone-free soil; keep seedbed moist.</td></tr>
+          <tr data-cat="vegetable"><td>Cauliflower</td><td>Transplant Mar 25–Apr 15; fall Jun–Jul</td><td>55–85 days</td><td>18–24 in</td><td>6.0–7.5</td><td>Needs steady moisture and fertility.</td></tr>
+          <tr data-cat="vegetable"><td>Corn, sweet</td><td>Direct sow Apr 20–Jul 1</td><td>65–100 days</td><td>8–12 in</td><td>5.8–7.0</td><td>Plant in blocks, not a single row, for pollination.</td></tr>
+          <tr data-cat="vegetable"><td>Cucumber</td><td>Direct sow or transplant May 1–Jul 10</td><td>50–70 days</td><td>12–24 in</td><td>6.0–7.0</td><td>Trellising saves space and improves airflow.</td></tr>
+          <tr data-cat="vegetable"><td>Eggplant</td><td>Start indoors Feb–Mar; transplant after May 5</td><td>70–90 days from transplant</td><td>18–24 in</td><td>5.8–6.8</td><td>Needs warm soil and long heat.</td></tr>
+          <tr data-cat="vegetable"><td>Garlic</td><td>Plant cloves Oct–Nov</td><td>Harvest Jun–Jul</td><td>6 in</td><td>6.0–7.0</td><td>Mulch over winter; cure after harvest.</td></tr>
+          <tr data-cat="vegetable"><td>Kale</td><td>Mar–Apr; Jul–Aug</td><td>50–70 days</td><td>12–18 in</td><td>6.0–7.5</td><td>Flavor improves after light frost.</td></tr>
+          <tr data-cat="vegetable"><td>Lettuce</td><td>Mar–May; Aug–Sep</td><td>30–60 days</td><td>6–12 in</td><td>6.0–7.0</td><td>Succession sow every 1–2 weeks.</td></tr>
+          <tr data-cat="vegetable"><td>Muskmelon</td><td>Direct sow or transplant May 5–Jun 10</td><td>75–100 days</td><td>24–36 in</td><td>6.0–6.8</td><td>Warm soil; reduce water near ripening.</td></tr>
+          <tr data-cat="vegetable"><td>Okra</td><td>Direct sow May 10–Jun 15</td><td>55–70 days</td><td>12–18 in</td><td>6.0–7.5</td><td>Pick pods young and frequently.</td></tr>
+          <tr data-cat="vegetable"><td>Onions</td><td>Sets/plants Mar 1–Apr 15</td><td>90–120 days</td><td>4–6 in</td><td>6.0–7.0</td><td>Use long-day or intermediate-day varieties.</td></tr>
+          <tr data-cat="vegetable"><td>Peas</td><td>Direct sow Mar 1–Apr 10; fall Jul 25–Aug 10</td><td>55–70 days</td><td>2–3 in</td><td>6.0–7.5</td><td>Best before hot weather.</td></tr>
+          <tr data-cat="vegetable"><td>Peppers</td><td>Start indoors Feb–Mar; transplant after May 5</td><td>60–90 days from transplant</td><td>18–24 in</td><td>6.0–6.8</td><td>Warm-season; staking helps heavy plants.</td></tr>
+          <tr data-cat="vegetable"><td>Potatoes</td><td>Plant seed pieces Mar 15–Apr 15</td><td>70–120 days</td><td>10–12 in</td><td>5.0–6.5</td><td>Hill soil as stems grow; avoid fresh lime.</td></tr>
+          <tr data-cat="vegetable"><td>Pumpkin</td><td>Direct sow May 10–Jun 15</td><td>3–6 ft</td><td>90–120 days</td><td>5.8–6.8</td><td>Allow lots of vine space; cure before storage.</td></tr>
+          <tr data-cat="vegetable"><td>Radish</td><td>Mar–May; Aug–Sep</td><td>22–35 days</td><td>1–2 in</td><td>6.0–7.0</td><td>Fast succession crop; harvest before pithy.</td></tr>
+          <tr data-cat="vegetable"><td>Spinach</td><td>Mar–Apr; Aug 15–Sep 15</td><td>35–50 days</td><td>3–6 in</td><td>6.0–7.5</td><td>Bolts in heat; can overwinter under protection.</td></tr>
+          <tr data-cat="vegetable"><td>Summer squash</td><td>Direct sow May 1–Jul 15</td><td>45–60 days</td><td>24–36 in</td><td>6.0–7.0</td><td>Pick small and often.</td></tr>
+          <tr data-cat="vegetable"><td>Sweet potato</td><td>Plant slips May 10–Jun 10</td><td>90–120 days</td><td>12–18 in</td><td>5.5–6.5</td><td>Needs warm soil; cure roots after harvest.</td></tr>
+          <tr data-cat="vegetable"><td>Tomato</td><td>Start indoors Feb–Mar; transplant Apr 25–May 15</td><td>60–90 days from transplant</td><td>24–36 in</td><td>6.0–6.8</td><td>Stake or cage; rotate away from potatoes and peppers.</td></tr>
+          <tr data-cat="vegetable"><td>Turnip</td><td>Mar–Apr; Jul 20–Sep 1</td><td>35–60 days</td><td>3–6 in</td><td>5.5–6.8</td><td>Both roots and greens are edible.</td></tr>
+          <tr data-cat="vegetable"><td>Watermelon</td><td>Direct sow or transplant May 5–Jun 10</td><td>75–100 days</td><td>3–6 ft</td><td>6.0–6.8</td><td>Needs heat, space and good pollination.</td></tr>
+          <tr data-cat="vegetable"><td>Winter squash</td><td>Direct sow May 10–Jun 15</td><td>80–120 days</td><td>3–6 ft</td><td>5.8–6.8</td><td>Cure 7–14 days before storage.</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </details>
+
+    <details>
+      <summary>🍎 Fruit Trees &amp; Berries</summary>
+      <div class="plant-table-wrap">
+      <table class="reference-table plant-table">
+        <thead><tr><th>Plant</th><th>Best planting time</th><th>First useful crop</th><th>Typical spacing</th><th>pH</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr data-cat="fruit"><td>Apple</td><td>Late Mar–early Apr; container trees in Oct</td><td>2–5 years by rootstock</td><td>6–20 ft</td><td>6.0–7.0</td><td>Most need a compatible pollinizer; dwarf trees need support.</td></tr>
+          <tr data-cat="fruit"><td>Pear</td><td>Dormant, Mar–Apr</td><td>3–6 years</td><td>12–20 ft</td><td>6.0–7.0</td><td>Choose fire-blight-resistant cultivars.</td></tr>
+          <tr data-cat="fruit"><td>Peach</td><td>Dormant, Mar–Apr</td><td>2–4 years</td><td>15–20 ft</td><td>6.0–7.0</td><td>Shorter-lived; prune to open center.</td></tr>
+          <tr data-cat="fruit"><td>Plum</td><td>Dormant, Mar–Apr</td><td>3–5 years</td><td>12–18 ft</td><td>6.0–7.0</td><td>European and Japanese types have different pollination needs.</td></tr>
+          <tr data-cat="fruit"><td>Persimmon</td><td>Dormant, Mar–Apr</td><td>3–6 years grafted</td><td>15–25 ft</td><td>6.0–7.5</td><td>American persimmon is very hardy.</td></tr>
+          <tr data-cat="fruit"><td>Pawpaw</td><td>Spring, preferably container-grown</td><td>4–8 years from seed; 2–4 grafted</td><td>8–15 ft</td><td>5.5–7.0</td><td>Plant at least two genetically distinct trees; young trees like shade.</td></tr>
+          <tr data-cat="fruit"><td>Jujube</td><td>Spring after severe cold</td><td>2–4 years</td><td>12–20 ft</td><td>5.5–8.0</td><td>Drought tolerant; verify cultivar hardiness for site.</td></tr>
+          <tr data-cat="fruit"><td>Fig, hardy</td><td>After frost danger; protected site</td><td>1–3 years</td><td>6–10 ft</td><td>6.0–6.5</td><td>Top growth may winter-kill; mulch or use protected culture.</td></tr>
+          <tr data-cat="fruit"><td>Grape</td><td>Early spring</td><td>2–3 years</td><td>6–10 ft</td><td>5.5–6.5</td><td>Needs strong trellis and annual pruning.</td></tr>
+          <tr data-cat="fruit"><td>Blueberry</td><td>Spring or fall</td><td>2–3 years; full 6+</td><td>4–6 ft</td><td>4.5–5.5</td><td>Requires acidic soil and consistent moisture.</td></tr>
+          <tr data-cat="fruit"><td>Blackberry</td><td>Early spring</td><td>1–2 years</td><td>3–5 ft</td><td>5.5–6.5</td><td>Trellis most varieties; remove spent floricanes.</td></tr>
+          <tr data-cat="fruit"><td>Raspberry</td><td>Early spring</td><td>1–2 years</td><td>2–3 ft</td><td>5.5–6.5</td><td>Needs excellent airflow and drainage.</td></tr>
+          <tr data-cat="fruit"><td>Strawberry</td><td>Mar–Apr</td><td>Small crop year 1; full year 2</td><td>12–18 in</td><td>5.5–6.5</td><td>Renovate June-bearing beds after harvest.</td></tr>
+          <tr data-cat="fruit"><td>Gooseberry / Currant</td><td>Early spring</td><td>2–3 years</td><td>3–5 ft</td><td>5.5–7.0</td><td>Best with afternoon shade in hot sites.</td></tr>
+          <tr data-cat="fruit"><td>Honeyberry</td><td>Spring or fall</td><td>2–4 years</td><td>4–6 ft</td><td>5.0–7.0</td><td>Plant two compatible varieties.</td></tr>
+          <tr data-cat="fruit"><td>Hazelnut</td><td>Dormant, spring</td><td>3–5 years</td><td>10–15 ft</td><td>5.5–7.5</td><td>Plant multiple compatible cultivars.</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </details>
+
+    <details>
+      <summary>🌿 Herbs</summary>
+      <div class="plant-table-wrap">
+      <table class="reference-table plant-table">
+        <thead><tr><th>Herb</th><th>Plant</th><th>Harvest</th><th>Life cycle</th><th>Spacing</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr data-cat="herb"><td>Basil</td><td>After frost, May</td><td>30–60 days</td><td>Annual</td><td>8–12 in</td><td>Pinch flowers to prolong leaf production.</td></tr>
+          <tr data-cat="herb"><td>Cilantro</td><td>Mar–May; Aug–Sep</td><td>30–45 days leaves</td><td>Annual</td><td>4–8 in</td><td>Bolts in heat; succession sow.</td></tr>
+          <tr data-cat="herb"><td>Dill</td><td>Apr–Jun</td><td>40–60 days leaves</td><td>Annual</td><td>8–12 in</td><td>Allow some plants to flower for pollinators.</td></tr>
+          <tr data-cat="herb"><td>Parsley</td><td>Start indoors Feb; set out Apr</td><td>70–90 days</td><td>Biennial</td><td>8–12 in</td><td>Slow germination; soak seed before sowing.</td></tr>
+          <tr data-cat="herb"><td>Mint</td><td>Spring</td><td>First season</td><td>Perennial</td><td>18–24 in</td><td>Contain it—mint interprets boundaries as suggestions.</td></tr>
+          <tr data-cat="herb"><td>Oregano</td><td>Spring</td><td>First season</td><td>Perennial</td><td>12–18 in</td><td>Best flavor just before flowering.</td></tr>
+          <tr data-cat="herb"><td>Thyme</td><td>Spring</td><td>First season</td><td>Perennial</td><td>10–12 in</td><td>Needs sharp drainage.</td></tr>
+          <tr data-cat="herb"><td>Sage</td><td>Spring</td><td>First season</td><td>Short-lived perennial</td><td>18–24 in</td><td>Avoid wet winter soil.</td></tr>
+          <tr data-cat="herb"><td>Rosemary</td><td>After frost; container preferred</td><td>First season</td><td>Tender perennial</td><td>18–24 in</td><td>Overwinter indoors or in protected greenhouse.</td></tr>
+          <tr data-cat="herb"><td>Chives</td><td>Spring or fall</td><td>First season</td><td>Perennial</td><td>8–12 in</td><td>Divide clumps every few years.</td></tr>
+          <tr data-cat="herb"><td>Ginger</td><td>Start indoors Feb–Mar; move out after warm</td><td>8–10 months</td><td>Tender perennial</td><td>8–12 in</td><td>Best in containers or greenhouse in Missouri.</td></tr>
+          <tr data-cat="herb"><td>Licorice</td><td>Start spring</td><td>Roots after 3–4 years</td><td>Perennial</td><td>24–36 in</td><td>Deep-rooted and spreading; verify winter protection.</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </details>
+
+    <details>
+      <summary>🌾 Cover Crops &amp; Soil Builders</summary>
+      <div class="plant-table-wrap">
+      <table class="reference-table plant-table">
+        <thead><tr><th>Crop</th><th>Missouri planting window</th><th>Terminate / use</th><th>Main benefits</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr data-cat="cover"><td>Buckwheat</td><td>Mid-May–late Aug</td><td>Flowering, about 30–45 days</td><td>Fast cover, pollinators, phosphorus scavenging</td><td>Frost-killed; prevent seed set if volunteers are unwanted.</td></tr>
+          <tr data-cat="cover"><td>Cereal rye</td><td>Sep–Nov</td><td>Spring before heading or by roller-crimping at anthesis</td><td>Winter cover, biomass, weed suppression</td><td>Very winter hardy; can tie up nitrogen while decomposing.</td></tr>
+          <tr data-cat="cover"><td>Winter wheat</td><td>Sep–Oct</td><td>Spring</td><td>Winter cover, roots, optional grain</td><td>Easier spring termination than rye.</td></tr>
+          <tr data-cat="cover"><td>Oats</td><td>Feb–Mar or Aug–Sep</td><td>Winter-kills when fall planted</td><td>Quick biomass, erosion control</td><td>Good before early spring crops.</td></tr>
+          <tr data-cat="cover"><td>Crimson clover</td><td>Aug–Sep</td><td>Spring at early bloom</td><td>Nitrogen, pollinators</td><td>Winter survival varies; inoculate seed.</td></tr>
+          <tr data-cat="cover"><td>Hairy vetch</td><td>Aug–Sep</td><td>Late spring flowering</td><td>High nitrogen, biomass</td><td>Can become weedy if allowed to seed.</td></tr>
+          <tr data-cat="cover"><td>Field peas</td><td>Feb–Mar or Aug</td><td>Before seed set</td><td>Nitrogen, cool-season forage</td><td>Often mixed with oats.</td></tr>
+          <tr data-cat="cover"><td>Daikon radish</td><td>Aug–early Sep</td><td>Winter-kills</td><td>Compaction relief, nutrient capture</td><td>Best with 6–10 weeks growth before hard freeze.</td></tr>
+          <tr data-cat="cover"><td>Sorghum-sudangrass</td><td>May–Jul</td><td>Mow before seed; frost-killed</td><td>Huge biomass, deep roots</td><td>Observe livestock grazing precautions after frost or drought.</td></tr>
+          <tr data-cat="cover"><td>White clover</td><td>Feb–Apr or Aug–Sep</td><td>Living mulch or mow</td><td>Long-term nitrogen, pollinators</td><td>Works in paths and orchards; competes for water near young trees.</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </details>
+
+    <details>
+      <summary>🍌 Greenhouse &amp; Tropical Crops</summary>
+      <div class="plant-table-wrap">
+      <table class="reference-table plant-table">
+        <thead><tr><th>Plant</th><th>Start / propagate</th><th>Time to crop</th><th>Temperature target</th><th>Container / spacing</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr data-cat="greenhouse"><td>Banana</td><td>Pup, tissue culture or seed; year-round warm</td><td>9–18 months after established</td><td>75–90°F growth; avoid below 50°F</td><td>15–30 gal dwarf types</td><td>Heavy feeder and water user; needs intense light.</td></tr>
+          <tr data-cat="greenhouse"><td>Citrus</td><td>Grafted tree preferred</td><td>1–3 years after purchase</td><td>65–85°F; cool bright winter</td><td>10–25+ gal</td><td>Excellent drainage; hand-pollination usually unnecessary.</td></tr>
+          <tr data-cat="greenhouse"><td>Pineapple</td><td>Crown, slip or sucker</td><td>18–30 months</td><td>70–90°F</td><td>3–7 gal</td><td>Do not overwater; one main fruit per rosette.</td></tr>
+          <tr data-cat="greenhouse"><td>Dragon fruit</td><td>Cutting</td><td>1–2 years</td><td>65–90°F</td><td>Large pot + strong trellis</td><td>Some cultivars need cross-pollination.</td></tr>
+          <tr data-cat="greenhouse"><td>Ginger</td><td>Rhizome pieces in late winter</td><td>8–10 months</td><td>70–85°F</td><td>Wide 5+ gal pot</td><td>Harvest young ginger earlier or mature after foliage dies.</td></tr>
+          <tr data-cat="greenhouse"><td>Turmeric</td><td>Rhizomes in late winter</td><td>8–10 months</td><td>70–85°F</td><td>Wide 5+ gal pot</td><td>Likes warmth, moisture and a long season.</td></tr>
+          <tr data-cat="greenhouse"><td>Passionfruit / Maypop</td><td>Seed or cutting</td><td>1–2 years</td><td>65–85°F</td><td>Large pot + trellis</td><td>Maypop is hardier; vigorous vines need pruning.</td></tr>
+          <tr data-cat="greenhouse"><td>Fig</td><td>Cutting or young tree</td><td>1–2 years</td><td>Warm summer; cool dormancy</td><td>10–20 gal</td><td>Root restriction can improve container fruiting.</td></tr>
+          <tr data-cat="greenhouse"><td>Coffee</td><td>Fresh seed or plant</td><td>3–5 years</td><td>65–80°F</td><td>5–15 gal</td><td>Bright filtered light; humidity helps.</td></tr>
+          <tr data-cat="greenhouse"><td>Cacao</td><td>Very fresh seed</td><td>3–5+ years</td><td>70–90°F; high humidity</td><td>Large permanent container</td><td>Difficult indoors; needs stable tropical conditions.</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </details>
+
+    <details>
+      <summary>🌳 Coppice &amp; Useful Trees</summary>
+      <div class="plant-table-wrap">
+      <table class="reference-table plant-table">
+        <thead><tr><th>Species</th><th>Planting time</th><th>First cut</th><th>Typical rotation</th><th>Main uses</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr data-cat="coppice"><td>Willow</td><td>Dormant cuttings, late winter–spring</td><td>2–3 years</td><td>1–4 years</td><td>Baskets, rods, fuel, biochar</td><td>Likes moisture; stool annually for fine rods.</td></tr>
+          <tr data-cat="coppice"><td>Black locust</td><td>Dormant seedlings, spring</td><td>5–8 years</td><td>7–15 years</td><td>Fence posts, fuel, bee forage</td><td>Durable wood; spreads by root suckers.</td></tr>
+          <tr data-cat="coppice"><td>Hazel</td><td>Dormant, spring or fall</td><td>4–7 years</td><td>5–10 years</td><td>Nuts, poles, hurdles, charcoal</td><td>Keep some stems uncut for nut production.</td></tr>
+          <tr data-cat="coppice"><td>Linden / Basswood</td><td>Dormant, spring</td><td>7–12 years</td><td>10–20 years</td><td>Fiber, carving wood, bee forage</td><td>Ret bark for bast fiber; leave landmark trees mature.</td></tr>
+          <tr data-cat="coppice"><td>Bamboo, clumping</td><td>Spring after frost</td><td>3–5 years to useful culms</td><td>Annual selective harvest</td><td>Frames, stakes, trellises</td><td>Choose cold-hardy clumping types or install rhizome barrier.</td></tr>
+          <tr data-cat="coppice"><td>Mulberry</td><td>Dormant, spring</td><td>3–5 years</td><td>3–8 years</td><td>Fruit, fodder, fuel</td><td>Fast regrowth; fruit can be messy near paths.</td></tr>
+          <tr data-cat="coppice"><td>Osage orange</td><td>Dormant, spring</td><td>7–12 years</td><td>10–20 years</td><td>Posts, hedges, tool wood</td><td>Extremely durable; thorny.</td></tr>
+          <tr data-cat="coppice"><td>Hybrid poplar</td><td>Dormant cuttings, spring</td><td>3–5 years</td><td>4–10 years</td><td>Biomass, windbreak, rough lumber</td><td>Fast growth but less durable than locust.</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </details>
+
+    <details>
+      <summary>🧪 Quick Growing Rules</summary>
+      <table class="reference-table">
+        <tr><th>Topic</th><th>Rule of thumb</th></tr>
+        <tr><td>Seed depth</td><td>Plant about 2–3 times as deep as the seed is thick; surface-sow very tiny seed.</td></tr>
+        <tr><td>Soil readiness</td><td>Soil should crumble rather than smear or form a wet ribbon when squeezed.</td></tr>
+        <tr><td>Transplant hardening</td><td>Gradually expose seedlings to sun, wind and cooler nights for 7–10 days.</td></tr>
+        <tr><td>Watering</td><td>Target roughly 1 inch per week for many garden crops, adjusted for heat, soil and crop stage.</td></tr>
+        <tr><td>Succession planting</td><td>Sow fast crops every 1–3 weeks instead of planting the entire season’s supply at once.</td></tr>
+        <tr><td>Rotation</td><td>Avoid returning the same plant family to the same bed for at least 3 years when practical.</td></tr>
+        <tr><td>Seed storage</td><td>Keep seed cool, dark and dry in sealed containers; label variety and year.</td></tr>
+        <tr><td>Days to maturity</td><td>For transplanted crops, packet days usually start at transplanting; for direct-sown crops, at sowing.</td></tr>
+      </table>
+    </details>
+
+    <details>
+      <summary>🔗 Missouri Growing References</summary>
+      <div class="shortcuts" style="margin-top:12px">
+        <a class="shortcut" href="https://extension.missouri.edu/publications/g6201"><span>📅</span>MO Planting Calendar</a>
+        <a class="shortcut" href="https://extension.missouri.edu/publications/mg5"><span>🥕</span>Vegetable Gardening</a>
+        <a class="shortcut" href="https://extension.missouri.edu/publications/mg6"><span>🍎</span>Fruit Production</a>
+        <a class="shortcut" href="https://extension.missouri.edu/publications/g4161"><span>🌾</span>Cover Crops</a>
+        <a class="shortcut" href="https://extension.missouri.edu/publications/g6570"><span>🌱</span>Start Seeds Indoors</a>
+        <a class="shortcut" href="https://www.missouribotanicalgarden.org/gardens-gardening/your-garden/help-for-the-home-gardener"><span>🌿</span>Plant Finder</a>
+      </div>
+    </details>
+  </div>
+
+
+  <div class="footer">Local homepage • Your notes stay in this browser</div>
+</main>
+
+<script>
+  const clock = document.getElementById("clock");
+  const dateDisplay = document.getElementById("date");
+  const notes = document.getElementById("notes");
+  const noteStatus = document.getElementById("noteStatus");
+
+  function updateClock() {
+    const now = new Date();
+    clock.textContent = now.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"});
+    dateDisplay.textContent = now.toLocaleDateString([], {
+      weekday:"long", month:"long", day:"numeric", year:"numeric"
+    });
+  }
+  updateClock();
+  setInterval(updateClock, 1000);
+
+  notes.value = localStorage.getItem("homepageNotes") || "";
+  let saveTimer;
+  notes.addEventListener("input", () => {
+    noteStatus.textContent = "Saving…";
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      localStorage.setItem("homepageNotes", notes.value);
+      noteStatus.textContent = "Saved automatically on this computer.";
+    }, 300);
+  });
+
+  const plantSearch = document.getElementById("plantSearch");
+  const plantCategory = document.getElementById("plantCategory");
+  const plantRows = [...document.querySelectorAll("#plant-reference tbody tr[data-cat]")];
+
+  function filterPlants() {
+    const term = plantSearch.value.trim().toLowerCase();
+    const category = plantCategory.value;
+    plantRows.forEach(row => {
+      const matchesText = !term || row.textContent.toLowerCase().includes(term);
+      const matchesCategory = category === "all" || row.dataset.cat === category;
+      row.classList.toggle("plant-hidden", !(matchesText && matchesCategory));
+    });
+  }
+
+  plantSearch.addEventListener("input", filterPlants);
+  plantCategory.addEventListener("change", filterPlants);
+
+</script>
+</body>
+</html>
