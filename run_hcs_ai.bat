@@ -18,8 +18,4 @@ if exist "update_hcs.ps1" (
   )
 )
 
-if /I "%~1"=="--minimized" (
-  ".venv\Scripts\pythonw.exe" -m hcs_ai.desktop_host --minimized
-) else (
-  ".venv\Scripts\pythonw.exe" -m hcs_ai.desktop_host
-)
+".venv\Scripts\pythonw.exe" -m hcs_ai.desktop_host %*
