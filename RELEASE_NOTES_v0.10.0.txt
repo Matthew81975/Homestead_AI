@@ -1,0 +1,19 @@
+HCS-AI v0.10.0 — Models, Performance Telemetry, and Prompt Functions
+
+- Adds a dedicated Models tab with Hugging Face GGUF search, managed downloads,
+  local import/list/delete/open-folder controls, active-model selection, and
+  load/unload controls through the existing llama.cpp engine.
+- Adds model compatibility metadata including file size, GGUF quantization,
+  and a RAM-fit estimate.
+- Records prompt-processing and generation tokens/second when the model server
+  reports timings, with output-throughput fallback from token counts and wall time.
+- Stores per-model performance history with a hardware signature for future
+  automatic model routing.
+- Shows the latest measured output and prompt throughput in the AI interface.
+- Adds Prompt Functions: a restricted Python-like high-level language where
+  prompts are inputs to ask()/ask_json() functions and ordinary control flow can
+  compose LLM calls, HKR/KB queries, and HCS tools.
+- Adds a Prompt Functions editor/library with JSON test inputs, basic syntax
+  highlighting, execution traces, saved versions, and revision history.
+- Prompt Function scripts are interpreted through a whitelisted AST subset;
+  Python eval/exec is not used.

@@ -1,5 +1,5 @@
 from . import desktop_host
-from .gui_home import App
+from .gui_recent import App
 
 # Reuse the existing tray/update/process-management host unchanged, replacing
 # only the GUI class it instantiates.
