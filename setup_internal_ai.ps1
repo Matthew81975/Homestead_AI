@@ -15,10 +15,14 @@ Write-Host "====================="
 
 if (-not (Test-Path (Join-Path $runtimeDir "llama-server.exe"))) {
     Write-Host "Downloading the current llama.cpp Windows CPU runtime..."
-    $release = Invoke-RestMethod -Headers @{"User-Agent"="HCS-AI-Installer"} `
-        -Uri "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
-    $asset = $release.assets | Where-Object { $_.name -match "bin-win-cpu-x64\.zip$" } | Select-Object -First 1
-    if (-not $asset) { throw "The llama.cpp release did not contain a Windows CPU x64 package." }
+    $releaseCandidates = Invoke-RestMethod -Headers @{"User-Agent"="HCS-AI-Installer"} `
+        -Uri "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=20"
+    $asset = $null
+    foreach ($candidate in $releaseCandidates) {
+        $asset = $candidate.assets | Where-Object { $_.name -match "bin-win-cpu-x64\.zip$" } | Select-Object -First 1
+        if ($asset) { break }
+    }
+    if (-not $asset) { throw "No recent llama.cpp release contained a Windows CPU x64 package." }
     $tempDir = Join-Path ([IO.Path]::GetTempPath()) ("hcs-llama-" + [guid]::NewGuid())
     $zipPath = "$tempDir.zip"
     & curl.exe -L --fail --retry 3 --output $zipPath $asset.browser_download_url
