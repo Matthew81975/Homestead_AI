@@ -1,7 +1,11 @@
 import json
+import time
+
 import httpx
+
 from .config import load_config, llm_config
 from .knowledge import search as kb_search
+from .telemetry import record_response
 from .tools import public_tool_specs, call_tool
 
 
@@ -43,6 +47,7 @@ def _post_completion(client, url, payload, allow_tool_fallback=True):
 
     raise RuntimeError(f"The local model engine returned HTTP {response.status_code}: {_response_error(response)}")
 
+
 def _tool_definitions():
     defs = []
     for t in public_tool_specs():
@@ -66,7 +71,10 @@ def _tool_definitions():
         })
     return defs
 
-def _resolve_model(client, llm):
+
+def _resolve_model(client, llm, override=None):
+    if override and override != "auto":
+        return override
     configured = llm.get("model", "auto")
     if configured and configured != "auto":
         return configured
@@ -78,7 +86,8 @@ def _resolve_model(client, llm):
         raise RuntimeError("No model is loaded in the local model server.")
     return data[0]["id"]
 
-def chat(user_message: str, history=None, use_kb: bool=True):
+
+def chat(user_message: str, history=None, use_kb: bool = True, model: str | None = None):
     cfg = load_config()
     llm = llm_config()
     context = ""
@@ -93,20 +102,30 @@ def chat(user_message: str, history=None, use_kb: bool=True):
         messages.extend(history[-12:])
     messages.append({"role": "user", "content": user_message})
     url = llm["base_url"].rstrip("/") + "/chat/completions"
-    all_results=[]
+    all_results = []
     with httpx.Client(timeout=llm["timeout_seconds"]) as client:
         tools_enabled = True
+        resolved_model = _resolve_model(client, llm, model)
         payload = {
-            "model": _resolve_model(client, llm), "messages": messages,
-            "temperature": llm["temperature"], "tools": _tool_definitions(), "tool_choice": "auto"
+            "model": resolved_model,
+            "messages": messages,
+            "temperature": llm["temperature"],
+            "tools": _tool_definitions(),
+            "tool_choice": "auto",
         }
-        # Multiple rounds let the model do: search HKR -> read source -> research HKR -> read -> answer.
         for _round in range(5):
             payload["messages"] = messages
+            started = time.perf_counter()
             r, tools_enabled = _post_completion(
                 client, url, payload, allow_tool_fallback=tools_enabled
             )
-            msg = r.json()["choices"][0]["message"]
+            elapsed = time.perf_counter() - started
+            body = r.json()
+            try:
+                record_response(resolved_model, body, elapsed)
+            except Exception:
+                pass
+            msg = body["choices"][0]["message"]
             tool_calls = msg.get("tool_calls") or []
             if not tool_calls:
                 return {
