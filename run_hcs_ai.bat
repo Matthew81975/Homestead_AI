@@ -18,4 +18,4 @@ if exist "update_hcs.ps1" (
   )
 )
 
-".venv\Scripts\pythonw.exe" -m hcs_ai.desktop_host %*
+".venv\Scripts\pythonw.exe" -m hcs_ai.desktop_home %*

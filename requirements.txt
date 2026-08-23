@@ -11,3 +11,4 @@ pypdf>=5.0
 packaging>=24.1
 pystray>=0.19.5
 Pillow>=10.4
+tkinterweb>=4.3
