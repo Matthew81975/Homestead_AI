@@ -1,0 +1,8 @@
+# Optional shared 3D visualization stack for HCS.
+# Kept separate from requirements.txt so headless/low-memory HCS installs do not
+# pay the graphics dependency cost unless 3D visualization is desired.
+panda3d>=1.10.16,<1.11
+
+# Ursina remains an optional convenience layer on Python 3.12+; the shared HCS
+# renderer targets Panda3D directly so Python 3.10/3.11 installations still work.
+ursina>=8.3.0,<9; python_version >= "3.12"
