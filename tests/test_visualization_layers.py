@@ -5,7 +5,7 @@ from hcs_ai.visualization.scene import Scene, SceneNode
 def test_default_registry_contains_building_disciplines():
     registry = LayerRegistry.default()
     for layer in (
-        "architecture", "structure", "framing", "foundation", "earthwork",
+        "architecture", "openings", "structure", "framing", "foundation", "earthwork",
         "drainage", "plumbing", "electrical", "low_voltage", "hvac", "energy",
         "insulation", "finishes", "dimensions", "annotations", "analysis",
     ):
