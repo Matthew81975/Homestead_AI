@@ -1,4 +1,4 @@
-from design_platform import (
+from hcs_ai.design_platform import (
     Quantity, RectOpening, StraightWallGeometry, EngineeringValue,
     EarthbagAssembly, RubbleAssembly, WallLoads, CheckResult,
     WallAnalysisResult, analyze_straight_mass_wall, to_si, from_si,
