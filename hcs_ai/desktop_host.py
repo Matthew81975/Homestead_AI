@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+from pathlib import Path
 import subprocess
 import sys
 import threading
@@ -40,6 +41,16 @@ def _health(host, port, timeout=0.5):
 def _startup_command():
     batch = ROOT / "run_hcs_ai.bat"
     return f'cmd.exe /c "\"{batch}\" --minimized"'
+
+
+def server_python_executable(executable=None):
+    """Use console Python for the backend even when the GUI host uses pythonw.exe."""
+    current = Path(executable or sys.executable)
+    if current.name.lower() == "pythonw.exe":
+        console_python = current.with_name("python.exe")
+        if console_python.exists():
+            return str(console_python)
+    return str(current)
 
 
 def startup_enabled():
@@ -138,7 +149,7 @@ class DesktopHost:
             pass
         flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         self.server = subprocess.Popen(
-            [sys.executable, "-m", "hcs_ai.server_tree"],
+            [server_python_executable(), "-m", "hcs_ai.server_tree"],
             cwd=str(ROOT),
             creationflags=flags,
         )
