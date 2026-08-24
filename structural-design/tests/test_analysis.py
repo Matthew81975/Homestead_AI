@@ -21,6 +21,7 @@ def test_solid_wall_matches_hand_calculation():
     expected_lateral = 500.0 * 12.0
     expected_moment = expected_lateral * 1.5
     assert math.isclose(result.self_weight, expected_self_weight)
+    assert math.isclose(result.external_vertical_force, 40_000.0)
     assert math.isclose(result.total_vertical_force, expected_vertical)
     assert math.isclose(result.lateral_force, expected_lateral)
     assert math.isclose(result.overturning_moment, expected_moment)
@@ -63,3 +64,16 @@ def test_assumptions_are_exposed():
     result = analyze_straight_mass_wall(wall, _assembly(), WallLoads(lateral_pressure=500.0))
     assert any('uniform lateral pressure' in item for item in result.assumptions)
     assert any('pier width' in item for item in result.assumptions)
+
+
+def test_unknown_density_does_not_become_zero_self_weight():
+    wall = StraightWallGeometry(length=4.0, height=3.0, thickness=0.4)
+    assembly = EarthbagAssembly(compressive_strength=EngineeringValue(1_000_000.0, 'Pa'))
+    result = analyze_straight_mass_wall(wall, assembly, WallLoads(vertical_line_load=10_000.0, lateral_pressure=500.0))
+    assert result.self_weight is None
+    assert result.external_vertical_force == 40_000.0
+    assert result.total_vertical_force is None
+    assert result.checks['compression'].status == 'not_evaluated'
+    assert result.checks['sliding'].status == 'not_evaluated'
+    assert result.checks['overturning'].status == 'not_evaluated'
+    assert result.checks['eccentricity'].status == 'not_evaluated'
