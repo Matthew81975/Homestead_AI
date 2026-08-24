@@ -1,9 +1,9 @@
 import math
 
-from design_platform.analysis import analyze_straight_mass_wall
-from design_platform.geometry import RectOpening, StraightWallGeometry
-from design_platform.loads import WallLoads
-from design_platform.mass_walls import EngineeringValue, EarthbagAssembly
+from hcs_ai.design_platform.analysis import analyze_straight_mass_wall
+from hcs_ai.design_platform.geometry import RectOpening, StraightWallGeometry
+from hcs_ai.design_platform.loads import WallLoads
+from hcs_ai.design_platform.mass_walls import EngineeringValue, EarthbagAssembly
 
 G = 9.80665
 
