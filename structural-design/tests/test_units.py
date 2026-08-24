@@ -1,7 +1,7 @@
 import math
 import pytest
 
-from design_platform.units import Quantity, to_si, from_si
+from hcs_ai.design_platform.units import Quantity, to_si, from_si
 
 
 def test_length_converts_feet_to_meters():
