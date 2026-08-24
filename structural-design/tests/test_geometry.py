@@ -1,7 +1,7 @@
 import math
 import pytest
 
-from design_platform.geometry import RectOpening, StraightWallGeometry
+from hcs_ai.design_platform.geometry import RectOpening, StraightWallGeometry
 
 
 def test_wall_areas_subtract_openings():
