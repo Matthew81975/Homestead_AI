@@ -37,7 +37,7 @@ def mass_wall_to_scene(
             node_id=wall_id,
             primitive='box',
             label=wall_id,
-            layer='structural',
+            layer='structure',
             transform=Transform(
                 position=(wall.length / 2.0, wall.height / 2.0, 0.0),
                 scale=(wall.length, wall.height, wall.thickness),
