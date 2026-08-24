@@ -13,7 +13,7 @@ class LayerState(str, Enum):
 
 
 DEFAULT_LAYERS = (
-    "architecture", "structure", "framing", "foundation", "earthwork",
+    "architecture", "openings", "structure", "framing", "foundation", "earthwork",
     "drainage", "plumbing", "electrical", "low_voltage", "hvac", "energy",
     "insulation", "finishes", "dimensions", "annotations", "analysis",
 )
