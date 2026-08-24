@@ -24,9 +24,9 @@ def analyze_straight_mass_wall(
     loads: WallLoads,
 ) -> WallAnalysisResult:
     density = _value_si(assembly.density, 'density')
-    self_weight = 0.0 if density is None else wall.volume * density * GRAVITY
+    self_weight = None if density is None else wall.volume * density * GRAVITY
     external_vertical = loads.vertical_line_load * wall.length
-    total_vertical = self_weight + external_vertical
+    total_vertical = None if self_weight is None else self_weight + external_vertical
 
     lateral_force = loads.lateral_pressure * wall.gross_area
     overturning_moment = lateral_force * wall.height / 2.0
@@ -40,6 +40,8 @@ def analyze_straight_mass_wall(
     compressive_strength = _value_si(assembly.compressive_strength, 'pressure')
     if compressive_strength is None:
         checks['compression'] = _not_evaluated('compression', 'N', 'compressive strength is unknown')
+    elif total_vertical is None:
+        checks['compression'] = _not_evaluated('compression', 'N', 'vertical demand is unknown because wall density is unknown')
     else:
         compression_capacity = compressive_strength * bearing_area
         checks['compression'] = _evaluated(
@@ -50,6 +52,8 @@ def analyze_straight_mass_wall(
     friction = _dimensionless(assembly.friction_coefficient)
     if friction is None:
         checks['sliding'] = _not_evaluated('sliding', 'N', 'friction coefficient is unknown')
+    elif total_vertical is None:
+        checks['sliding'] = _not_evaluated('sliding', 'N', 'sliding resistance is unknown because wall density is unknown')
     else:
         sliding_capacity = friction * total_vertical
         checks['sliding'] = _evaluated(
@@ -57,15 +61,26 @@ def analyze_straight_mass_wall(
             'Level-1 sliding resistance is friction coefficient times total vertical force.'
         )
 
-    overturning_capacity = total_vertical * wall.thickness / 2.0
-    checks['overturning'] = _evaluated(
-        'overturning', overturning_moment, overturning_capacity, 'N*m',
-        'Restoring moment uses total vertical force acting at mid-thickness.'
-    ) if total_vertical > 0 else _not_evaluated(
-        'overturning', 'N*m', 'no stabilizing vertical force is present'
-    )
+    if total_vertical is None:
+        checks['overturning'] = _not_evaluated(
+            'overturning', 'N*m', 'restoring moment is unknown because wall density is unknown'
+        )
+    elif total_vertical > 0:
+        overturning_capacity = total_vertical * wall.thickness / 2.0
+        checks['overturning'] = _evaluated(
+            'overturning', overturning_moment, overturning_capacity, 'N*m',
+            'Restoring moment uses total vertical force acting at mid-thickness.'
+        )
+    else:
+        checks['overturning'] = _not_evaluated(
+            'overturning', 'N*m', 'no stabilizing vertical force is present'
+        )
 
-    if total_vertical > 0:
+    if total_vertical is None:
+        checks['eccentricity'] = _not_evaluated(
+            'eccentricity', 'm', 'eccentricity is unknown because wall density is unknown'
+        )
+    elif total_vertical > 0:
         eccentricity = overturning_moment / total_vertical
         checks['eccentricity'] = _evaluated(
             'eccentricity', eccentricity, wall.thickness / 6.0, 'm',
@@ -86,6 +101,7 @@ def analyze_straight_mass_wall(
 
     return WallAnalysisResult(
         self_weight=self_weight,
+        external_vertical_force=external_vertical,
         total_vertical_force=total_vertical,
         lateral_force=lateral_force,
         overturning_moment=overturning_moment,
@@ -99,15 +115,15 @@ def analyze_straight_mass_wall(
 def _pier_results(
     segments: tuple[tuple[float, float], ...],
     thickness: float,
-    total_vertical: float,
+    total_vertical: float | None,
     total_width: float,
 ) -> tuple[PierResult, ...]:
     results: list[PierResult] = []
     for start, end in segments:
         width = end - start
-        force = 0.0 if total_width == 0 else total_vertical * width / total_width
+        force = None if total_vertical is None else (0.0 if total_width == 0 else total_vertical * width / total_width)
         area = width * thickness
-        stress = 0.0 if area == 0 else force / area
+        stress = None if force is None else (0.0 if area == 0 else force / area)
         results.append(PierResult(start=start, end=end, axial_force=force, stress=stress))
     return tuple(results)
 
