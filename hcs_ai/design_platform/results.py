@@ -21,8 +21,8 @@ class CheckResult:
 class PierResult:
     start: float
     end: float
-    axial_force: float
-    stress: float
+    axial_force: float | None
+    stress: float | None
 
     @property
     def width(self) -> float:
@@ -31,8 +31,9 @@ class PierResult:
 
 @dataclass(frozen=True)
 class WallAnalysisResult:
-    self_weight: float
-    total_vertical_force: float
+    self_weight: float | None
+    external_vertical_force: float
+    total_vertical_force: float | None
     lateral_force: float
     overturning_moment: float
     load_bearing_width: float
