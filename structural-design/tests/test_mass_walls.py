@@ -1,6 +1,6 @@
 import pytest
 
-from design_platform.mass_walls import EngineeringValue, EarthbagAssembly, RubbleAssembly
+from hcs_ai.design_platform.mass_walls import EngineeringValue, EarthbagAssembly, RubbleAssembly
 
 
 def test_engineering_value_preserves_provenance():
