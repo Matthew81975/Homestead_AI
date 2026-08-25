@@ -32,6 +32,17 @@ def test_event_filter_redaction_and_export(tmp_path: Path):
     assert "Bearer nope" not in text
 
 
+def test_debug_events_require_development_mode():
+    service = DiagnosticsService()
+    service.emit("DEBUG", "HTTP", "/health", "quiet debug event")
+    service.emit("INFO", "System", "startup", "ordinary event")
+    assert [event.severity for event in service.events()] == ["INFO"]
+
+    service.development_mode = True
+    service.emit("DEBUG", "HTTP", "/health", "visible debug event")
+    assert [event.severity for event in service.events()] == ["INFO", "DEBUG"]
+
+
 def test_telemetry_snapshot_updates_from_events():
     service = DiagnosticsService()
     service.emit(
