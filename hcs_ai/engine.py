@@ -3,6 +3,7 @@ import os
 import socket
 import subprocess
 import threading
+import time
 import urllib.request
 from pathlib import Path
 
@@ -35,6 +36,14 @@ def _available_port(host, first, attempts=100):
 def _write_state(**state):
     STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
     STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def _log_tail(max_chars=4000):
+    try:
+        text = LOG_PATH.read_text(encoding="utf-8", errors="replace")
+        return text[-max_chars:].strip()
+    except OSError:
+        return ""
 
 
 def status():
@@ -71,11 +80,29 @@ def status():
     }
 
 
+def _wait_until_ready(timeout_seconds=90):
+    deadline = time.monotonic() + max(1.0, float(timeout_seconds))
+    while time.monotonic() < deadline:
+        if _process is None or _process.poll() is not None:
+            tail = _log_tail()
+            detail = f"\n\nllama-server log:\n{tail}" if tail else ""
+            raise RuntimeError(f"The selected model server exited before becoming ready.{detail}")
+        current = status()
+        if current.get("ready"):
+            return current
+        time.sleep(0.25)
+    tail = _log_tail()
+    detail = f"\n\nllama-server log:\n{tail}" if tail else ""
+    raise RuntimeError(f"The selected model did not become ready within {timeout_seconds:.0f} seconds.{detail}")
+
+
 def start():
     global _process, _log_handle
     with _lock:
         if _process is not None and _process.poll() is None:
-            return status()
+            current = status()
+            if current.get("ready"):
+                return current
         config = load_config()
         cfg = config.get("inference", {})
         if cfg.get("backend") != "llama_cpp":
@@ -102,7 +129,11 @@ def start():
             creationflags=flags,
         )
         _write_state(port=port, pid=_process.pid, model_path=str(model))
-        return status()
+        try:
+            return _wait_until_ready(float(cfg.get("startup_timeout_seconds", 90)))
+        except Exception:
+            stop()
+            raise
 
 
 def stop():
@@ -125,6 +156,10 @@ def configure(model_path, auto_start=True):
     config = load_config()
     config.setdefault("inference", {})["model_path"] = model_path
     config["inference"]["auto_start"] = bool(auto_start)
+    # Managed llama.cpp determines its actual model from model_path. Clear any
+    # legacy external-server model alias so all callers discover the loaded model.
+    if config["inference"].get("backend") == "llama_cpp":
+        config.setdefault("llm", {})["model"] = "auto"
     save_config(config)
     return status()
 
