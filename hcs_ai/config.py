@@ -32,8 +32,6 @@ def load_config() -> dict:
 
     config = _deep_merge(default_config, local_config)
 
-    # These describe the installed application itself, so they follow the
-    # version-controlled defaults even when upgrading a legacy config.json.
     default_app = default_config.get("app", {})
     if default_app:
         app = config.setdefault("app", {})
@@ -45,18 +43,19 @@ def load_config() -> dict:
 
 
 def save_config(config: dict) -> None:
-    # Save only to the local configuration file. The default configuration is
-    # version-controlled and can safely change during automatic updates.
     temp = LOCAL_CONFIG_PATH.with_suffix(".json.tmp")
     temp.write_text(json.dumps(config, indent=2), encoding="utf-8")
     temp.replace(LOCAL_CONFIG_PATH)
 
 
 def llm_config() -> dict:
-    """Return LLM settings with the managed runtime's selected port applied."""
+    """Return LLM settings routed to the currently managed inference server."""
     config = load_config()
     llm = dict(config["llm"])
     if config.get("inference", {}).get("backend") == "llama_cpp":
+        # A managed llama.cpp process can only serve the GGUF HCS launched.
+        # Never retain a stale model alias from an older external/LM Studio setup.
+        llm["model"] = "auto"
         state_path = ROOT / "data" / "inference_state.json"
         try:
             state = json.loads(state_path.read_text(encoding="utf-8"))
