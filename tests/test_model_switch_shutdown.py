@@ -5,7 +5,9 @@ from hcs_ai import desktop_home
 
 
 def test_managed_llama_cpp_forces_auto_model(monkeypatch, tmp_path: Path):
-    state = tmp_path / "inference_state.json"
+    state_dir = tmp_path / "data"
+    state_dir.mkdir()
+    state = state_dir / "inference_state.json"
     state.write_text('{"port": 4321}', encoding="utf-8")
     monkeypatch.setattr(config, "ROOT", tmp_path)
     monkeypatch.setattr(config, "load_config", lambda: {
