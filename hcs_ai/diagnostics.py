@@ -99,6 +99,17 @@ class DiagnosticsService:
         payload = kwargs.pop("diagnostic_payload", {}) or {}
         if not self.capture_diagnostic_payloads:
             payload = {}
+        if severity == "DEBUG" and not self.development_mode:
+            return DiagnosticEvent(
+                timestamp=self._now(),
+                severity=severity,
+                subsystem=subsystem,
+                operation=operation,
+                message=message,
+                diagnostic_payload={},
+                event_id=0,
+                **kwargs,
+            )
         with self._lock:
             event = DiagnosticEvent(
                 timestamp=self._now(),
