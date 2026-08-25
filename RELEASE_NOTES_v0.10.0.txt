@@ -1,4 +1,4 @@
-HCS-AI v0.10.0 — Models, Performance Telemetry, and Prompt Functions
+HCS-AI v0.10.0 — Models, Performance Telemetry, Prompt Functions, and Development Diagnostics
 
 - Adds a dedicated Models tab with Hugging Face GGUF search, managed downloads,
   local import/list/delete/open-folder controls, active-model selection, and
@@ -17,3 +17,16 @@ HCS-AI v0.10.0 — Models, Performance Telemetry, and Prompt Functions
   highlighting, execution traces, saved versions, and revision history.
 - Prompt Function scripts are interpreted through a whitelisted AST subset;
   Python eval/exec is not used.
+- Adds a top-level Log tab with severity/subsystem/search filters, copy controls,
+  auto-scroll, and export to human-readable .log/.txt or structured .jsonl.
+- Adds a runtime-toggleable Development Diagnostics layer. Normal mode stays
+  compact; development mode expands the bottom status strip with backend port,
+  HTTP state, active subsystem/operation, last error, and diagnostic-payload state.
+- Adds a persistent bottom status strip showing the active model, last response
+  time, and measured output throughput when available.
+- HTTP failures now preserve and display useful backend response details instead
+  of reducing failures to generic messages such as "HTTP Error 400: Bad Request".
+- Knowledge Base imports now record chunking and classification stages and show
+  the first concrete classification failure reason with a direct View Log action.
+- Session diagnostics are written as rotating JSONL logs; approximately the ten
+  most recent sessions are retained. Diagnostic payload capture is off by default.
