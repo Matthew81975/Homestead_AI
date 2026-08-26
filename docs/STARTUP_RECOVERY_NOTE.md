@@ -1,1 +1,0 @@
-Temporary development note for the non-blocking startup fix. The managed model engine must not block FastAPI application startup; inference startup state is exposed separately so the GUI can open while the model initializes.
