@@ -1,11 +1,36 @@
 import json
+import threading
 
 import uvicorn
 
 from .config import load_config
 from .db import connect
 from .ports import choose_port, save_selected_port
-from .server import app
+from . import server as base_server
+
+app = base_server.app
+
+
+def nonblocking_startup():
+    """Bring up the HCS API immediately and initialize the model in background."""
+    base_server.init_db()
+    base_server.audit("startup", "HCS-AI server started; model initialization continues in background")
+    threading.Thread(
+        target=base_server.engine.auto_start,
+        name="hcs-model-autostart",
+        daemon=True,
+    ).start()
+
+
+# The base server historically waited for llama.cpp inside FastAPI startup.
+# That prevents /health from becoming available when a model needs >30 seconds
+# to initialize. HCS desktop runs server_tree, so replace that handler here.
+app.router.on_startup[:] = [
+    handler for handler in app.router.on_startup
+    if handler is not base_server.startup
+]
+if nonblocking_startup not in app.router.on_startup:
+    app.router.on_startup.append(nonblocking_startup)
 
 
 def knowledge_tree_snapshot():

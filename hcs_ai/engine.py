@@ -65,10 +65,15 @@ def status():
                 ready = response.status == 200
         except Exception:
             pass
+    phase = state.get("phase")
+    if not phase:
+        phase = "ready" if ready else ("starting" if running else "stopped")
     return {
         "backend": cfg.get("backend", "external"),
         "running": running,
         "ready": ready,
+        "phase": phase,
+        "error": state.get("error"),
         "pid": _process.pid if running else None,
         "port": state.get("port"),
         "executable": str(exe),
@@ -128,11 +133,26 @@ def start():
             args, cwd=str(ROOT), stdout=_log_handle, stderr=subprocess.STDOUT,
             creationflags=flags,
         )
-        _write_state(port=port, pid=_process.pid, model_path=str(model))
+        _write_state(
+            port=port,
+            pid=_process.pid,
+            model_path=str(model),
+            phase="starting",
+            error=None,
+        )
         try:
-            return _wait_until_ready(float(cfg.get("startup_timeout_seconds", 90)))
-        except Exception:
+            _wait_until_ready(float(cfg.get("startup_timeout_seconds", 90)))
+            _write_state(
+                port=port,
+                pid=_process.pid,
+                model_path=str(model),
+                phase="ready",
+                error=None,
+            )
+            return status()
+        except Exception as exc:
             stop()
+            _write_state(model_path=str(model), phase="failed", error=str(exc))
             raise
 
 
@@ -149,6 +169,12 @@ def stop():
         if _log_handle:
             _log_handle.close()
         _log_handle = None
+        cfg = load_config().get("inference", {})
+        _write_state(
+            model_path=str(_resolve(cfg.get("model_path"))),
+            phase="stopped",
+            error=None,
+        )
         return status()
 
 
@@ -170,4 +196,8 @@ def auto_start():
         try:
             start()
         except Exception as exc:
-            _write_state(error=str(exc))
+            _write_state(
+                model_path=str(_resolve(cfg.get("model_path"))),
+                phase="failed",
+                error=str(exc),
+            )
