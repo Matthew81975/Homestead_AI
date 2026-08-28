@@ -176,10 +176,7 @@ class App(gui_recent.App):
         super().__init__()
         self.title("HCS-AI 0.10.0")
         self.diagnostics = DIAGNOSTICS
-        self._notebook = next(
-            (child for child in self.winfo_children() if isinstance(child, ttk.Notebook)),
-            None,
-        )
+        self._notebook = getattr(self, "tabs", None)
         if self._notebook is None:
             raise RuntimeError("HCS top-level notebook was not found.")
 
