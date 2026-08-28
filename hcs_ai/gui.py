@@ -53,15 +53,29 @@ class App(tk.Tk):
         self.title("HCS-AI v0.7.1 — Self-Contained Local AI")
         self.geometry("1050x720")
         self.history = []
-        tabs = ttk.Notebook(self)
-        tabs.pack(fill="both", expand=True)
-        self.chat_tab, self.kb_tab, self.hkr_tab, self.ext_tab, self.mem_tab, self.mcp_tab, self.sys_tab = [ttk.Frame(tabs) for _ in range(7)]
+
+        # Main workspace: persistent tabbed tools above, Alexandria console below.
+        # The AI is the command interface to HCS, not a destination tab.
+        self.workspace_pane = ttk.Panedwindow(self, orient="vertical")
+        self.workspace_pane.pack(fill="both", expand=True)
+
+        self.tabs = ttk.Notebook(self.workspace_pane)
+        self.chat_tab = ttk.Frame(self.workspace_pane)
+        self.kb_tab, self.hkr_tab, self.ext_tab, self.mem_tab, self.mcp_tab, self.sys_tab = [
+            ttk.Frame(self.tabs) for _ in range(6)
+        ]
         for frame, title in zip(
-            [self.chat_tab,self.kb_tab,self.hkr_tab,self.ext_tab,self.mem_tab,self.mcp_tab,self.sys_tab],
-            ["AI","Knowledge Base","HKR Librarian","External Library","Memory","MCP","System"]
+            [self.kb_tab, self.hkr_tab, self.ext_tab, self.mem_tab, self.mcp_tab, self.sys_tab],
+            ["Knowledge Base", "HKR Librarian", "External Library", "Memory", "MCP", "System"],
         ):
-            tabs.add(frame, text=title)
-        self.build_chat(); self.build_kb(); self.build_hkr(); self.build_external(); self.build_memory(); self.build_mcp(); self.build_system()
+            self.tabs.add(frame, text=title)
+
+        self.workspace_pane.add(self.tabs, weight=4)
+        self.workspace_pane.add(self.chat_tab, weight=1)
+
+        self.build_chat()
+        self.build_kb(); self.build_hkr(); self.build_external(); self.build_memory(); self.build_mcp(); self.build_system()
+        self.after(80, self._set_ai_console_normal)
         self.after(300, self.check_server)
 
     def check_server(self):
@@ -76,16 +90,51 @@ class App(tk.Tk):
             self.after(1000, self.check_server)
 
     def build_chat(self):
-        self.chat_box = tk.Text(self.chat_tab, wrap="word", state="disabled")
-        self.chat_box.pack(fill="both", expand=True, padx=8, pady=8)
-        row = ttk.Frame(self.chat_tab); row.pack(fill="x", padx=8, pady=(0,8))
+        header = ttk.Frame(self.chat_tab)
+        header.pack(fill="x", padx=8, pady=(6, 0))
+        ttk.Label(header, text="Alexandria — HCS AI").pack(side="left")
+        ttk.Button(header, text="Expand", command=self._expand_ai_console).pack(side="right")
+        ttk.Button(header, text="Normal", command=self._set_ai_console_normal).pack(side="right", padx=4)
+        ttk.Button(header, text="Collapse", command=self._collapse_ai_console).pack(side="right")
+
+        chat_area = ttk.Frame(self.chat_tab)
+        chat_area.pack(fill="both", expand=True, padx=8, pady=6)
+        self.chat_box = tk.Text(chat_area, wrap="word", state="disabled", height=8)
+        chat_scroll = ttk.Scrollbar(chat_area, orient="vertical", command=self.chat_box.yview)
+        self.chat_box.configure(yscrollcommand=chat_scroll.set)
+        self.chat_box.pack(side="left", fill="both", expand=True)
+        chat_scroll.pack(side="right", fill="y")
+
+        row = ttk.Frame(self.chat_tab); row.pack(fill="x", padx=8, pady=(0,6))
         self.prompt = ttk.Entry(row); self.prompt.pack(side="left", fill="x", expand=True)
         self.prompt.bind("<Return>", lambda e: self.send())
         ttk.Button(row, text="Send", command=self.send).pack(side="left", padx=(8,0))
         self.use_kb = tk.BooleanVar(value=True)
         ttk.Checkbutton(row, text="Use KB", variable=self.use_kb).pack(side="left", padx=8)
         self.status = ttk.Label(self.chat_tab, text="Checking server...")
-        self.status.pack(anchor="w", padx=8, pady=(0,8))
+        self.status.pack(anchor="w", padx=8, pady=(0,6))
+
+    def _set_ai_sash(self, bottom_height: int):
+        try:
+            self.update_idletasks()
+            total = max(1, self.workspace_pane.winfo_height())
+            top_height = max(60, total - max(44, int(bottom_height)))
+            self.workspace_pane.sashpos(0, top_height)
+        except tk.TclError:
+            pass
+
+    def _collapse_ai_console(self):
+        self._set_ai_sash(46)
+
+    def _set_ai_console_normal(self):
+        self.update_idletasks()
+        total = max(1, self.workspace_pane.winfo_height())
+        self._set_ai_sash(max(190, int(total * 0.30)))
+
+    def _expand_ai_console(self):
+        self.update_idletasks()
+        total = max(1, self.workspace_pane.winfo_height())
+        self._set_ai_sash(max(260, int(total * 0.78)))
 
     def append_chat(self, who, text):
         self.chat_box.config(state="normal")
