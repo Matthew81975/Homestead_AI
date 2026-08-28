@@ -9,7 +9,7 @@ import json
 import re
 
 
-_SECRET_KEY_RE = re.compile(r"(authorization|api[_-]?key|token|secret|password|credential)", re.I)
+_SECRET_KEY_RE = re.compile(r"(authorization|api[_-]?key|secret|password|credential|^token$|(?:^|[_-])(?:access|refresh|auth|bearer)[_-]?token$)", re.I)
 
 
 @dataclass(slots=True)
