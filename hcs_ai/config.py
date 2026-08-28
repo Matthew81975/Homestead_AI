@@ -49,18 +49,32 @@ def save_config(config: dict) -> None:
 
 
 def llm_config() -> dict:
-    """Return LLM settings routed to the currently managed inference server."""
+    """Return settings for HCS-managed local inference.
+
+    Offline mode is intentionally strict: HCS will only use its own managed
+    llama.cpp server and will not fall through to an unrelated OpenAI-compatible
+    server that happens to be listening on the legacy port.
+    """
     config = load_config()
+    mode = str(config.get("ai", {}).get("mode") or "offline").lower()
+    if mode == "live":
+        raise RuntimeError(
+            "Live/cloud AI is selected but no cloud provider is configured yet. "
+            "Switch to Offline or configure a cloud provider."
+        )
+
     llm = dict(config["llm"])
+    llm["model"] = "auto"
     if config.get("inference", {}).get("backend") == "llama_cpp":
-        # A managed llama.cpp process can only serve the GGUF HCS launched.
-        # Never retain a stale model alias from an older external/LM Studio setup.
-        llm["model"] = "auto"
         state_path = ROOT / "data" / "inference_state.json"
         try:
             state = json.loads(state_path.read_text(encoding="utf-8"))
-            if state.get("port"):
-                llm["base_url"] = f"http://127.0.0.1:{int(state['port'])}/v1"
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
-            pass
+            state = {}
+        if state.get("phase") != "ready" or not state.get("port"):
+            raise RuntimeError(
+                "The HCS internal llama.cpp engine is not ready. "
+                "Use Internal AI Setup in the System tab, then start the engine."
+            )
+        llm["base_url"] = f"http://127.0.0.1:{int(state['port'])}/v1"
     return llm
