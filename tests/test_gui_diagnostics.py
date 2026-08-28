@@ -1,8 +1,9 @@
+import inspect
 import json
 from urllib.error import HTTPError
 from io import BytesIO
 
-from hcs_ai.gui_diagnostics import concise_http_reason, format_status_text
+from hcs_ai.gui_diagnostics import App, concise_http_reason, format_status_text
 from hcs_ai.diagnostics import TelemetrySnapshot
 
 
@@ -51,3 +52,17 @@ def test_status_text_expands_when_development_mode_on():
     assert "Models.load" in text
     assert "payloads ON" in text
     assert "bad model" in text
+
+
+def test_chat_send_preserves_diagnostics_flags_and_records_wall_time():
+    source = inspect.getsource(App.send)
+    assert "development_mode = bool(self.dev_mode_var.get())" in source
+    assert "self.dev_mode_var.set(development_mode)" in source
+    assert "self.payload_var.set(payload_capture)" in source
+    assert "last_response_seconds=elapsed" in source
+    assert '"Chat",\n                "complete"' in source
+
+
+def test_status_refresh_does_not_replace_wall_time_with_backend_latency():
+    source = inspect.getsource(App._refresh_status)
+    assert "last_response_seconds=" not in source
