@@ -166,10 +166,27 @@ def chat(user_message: str, history=None, use_kb: bool = True, model: str | None
 
             msg = body["choices"][0]["message"]
             tool_calls = msg.get("tool_calls") or []
+            allowed_tool_names = {item["name"] for item in public_tool_specs()}
+            valid_tool_calls = [
+                tc for tc in tool_calls
+                if isinstance(tc, dict)
+                and isinstance(tc.get("function"), dict)
+                and tc["function"].get("name") in allowed_tool_names
+            ]
+            invalid_tool_calls = [
+                tc for tc in tool_calls
+                if tc not in valid_tool_calls
+            ]
             round_info = {
                 "round": _round + 1,
                 "completion_seconds": completion_seconds,
                 "tool_calls": len(tool_calls),
+                "valid_tool_calls": len(valid_tool_calls),
+                "invalid_tool_calls": [
+                    (tc.get("function") or {}).get("name")
+                    for tc in invalid_tool_calls
+                    if isinstance(tc, dict)
+                ],
                 "tools_enabled": tools_enabled,
                 "usage": body.get("usage") if isinstance(body.get("usage"), dict) else {},
                 "provider_timings": body.get("timings") if isinstance(body.get("timings"), dict) else {},
@@ -179,9 +196,21 @@ def chat(user_message: str, history=None, use_kb: bool = True, model: str | None
             if not tool_calls:
                 return finish(msg.get("content", ""), tools_enabled)
 
+            # Never execute undeclared/unknown tool names. Some small local models
+            # occasionally emit a spurious tool call alongside perfectly usable text.
+            # In that case, keep the text and avoid a needless second inference round.
+            if not valid_tool_calls:
+                content = msg.get("content", "")
+                if content:
+                    return finish(content, tools_enabled)
+                return finish(
+                    "The model produced an invalid tool call and no usable text response.",
+                    tools_enabled,
+                )
+
             messages.append(msg)
             tool_started = time.perf_counter()
-            for tc in tool_calls:
+            for tc in valid_tool_calls:
                 name = tc["function"]["name"]
                 try:
                     args = json.loads(tc["function"].get("arguments") or "{}")
