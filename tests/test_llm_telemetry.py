@@ -82,6 +82,20 @@ class LlmTelemetryTests(unittest.TestCase):
         self.assertEqual(out["backend_timings"]["rounds"][0]["invalid_tool_calls"], ["HCS_OK"])
         call_tool_mock.assert_not_called()
 
+    def test_dynamic_tool_routing_omits_tools_for_plain_chat(self):
+        self.assertEqual(llm._select_tool_specs("Reply with exactly: HCS_OK"), [])
+
+    def test_dynamic_tool_routing_selects_system_tools(self):
+        names = {item["name"] for item in llm._select_tool_specs("Show me the running processes and RAM usage")}
+        self.assertIn("system_info", names)
+        self.assertIn("list_processes", names)
+        self.assertNotIn("research_hkr", names)
+
+    def test_dynamic_tool_routing_selects_hkr_tools(self):
+        names = {item["name"] for item in llm._select_tool_specs("Search HKR for sources about truss design")}
+        self.assertIn("search_hkr_library", names)
+        self.assertIn("read_hkr_source", names)
+
 
 if __name__ == "__main__":
     unittest.main()
