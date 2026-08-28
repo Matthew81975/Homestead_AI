@@ -32,7 +32,8 @@
     "hcs_ai/server_tree.py",
     "hcs_ai/telemetry.py",
     "hcs_ai/tools.py",
-    "hcs_ai/wait_for_server.py"
+    "hcs_ai/wait_for_server.py",
+    "hcs_ai/internal_ai_setup.ps1"
   ],
   "delete": []
 }
