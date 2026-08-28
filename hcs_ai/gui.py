@@ -728,10 +728,33 @@ class App(tk.Tk):
 
     def launch_internal_setup(self):
         script=Path(__file__).resolve().parent.parent / "setup_internal_ai.ps1"
+        if not script.is_file():
+            messagebox.showerror(
+                "Internal AI Setup",
+                f"Setup script was not found:\n{script}\n\n"
+                "The installed maintenance files need to be repaired."
+            )
+            return
         try:
-            subprocess.Popen(["powershell.exe","-NoProfile","-ExecutionPolicy","Bypass","-File",str(script)])
-            messagebox.showinfo("Internal AI Setup","The setup window is open. Refresh or restart HCS-AI when it finishes.")
-        except Exception as e: messagebox.showerror("Internal AI Setup",str(e))
+            flags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
+            subprocess.Popen(
+                [
+                    "powershell.exe",
+                    "-NoExit",
+                    "-NoProfile",
+                    "-ExecutionPolicy", "Bypass",
+                    "-File", str(script),
+                ],
+                cwd=str(script.parent),
+                creationflags=flags,
+            )
+            messagebox.showinfo(
+                "Internal AI Setup",
+                "A visible PowerShell setup window has been opened. "
+                "It will stay open so any setup error can be read."
+            )
+        except Exception as e:
+            messagebox.showerror("Internal AI Setup", str(e))
 
     def call_sys(self,name,args):
         try:
