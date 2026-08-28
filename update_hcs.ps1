@@ -63,6 +63,38 @@ function Assert-SafeRelativePath([string]$path) {
     return $p
 }
 
+function Get-LatestCommitSha {
+    # Prefer GitHub's public Atom feed. Unlike the REST API, this does not consume
+    # the low unauthenticated API quota that can cause HTTP 403 on normal launches.
+    $atomUrl = "https://github.com/$RepoOwner/$RepoName/commits/$Branch.atom"
+    try {
+        $atomResponse = Invoke-WebRequest -Headers $Headers -Uri $atomUrl -UseBasicParsing -TimeoutSec 15
+        [xml]$feed = $atomResponse.Content
+        $entry = @($feed.feed.entry) | Select-Object -First 1
+        if ($entry) {
+            $id = [string]$entry.id
+            if ($id -match "([0-9a-fA-F]{40})$") {
+                return $Matches[1].ToLowerInvariant()
+            }
+            foreach ($link in @($entry.link)) {
+                $href = [string]$link.href
+                if ($href -match "/commit/([0-9a-fA-F]{40})(?:$|[/?#])") {
+                    return $Matches[1].ToLowerInvariant()
+                }
+            }
+        }
+    } catch {
+        Write-Host "GitHub Atom update check unavailable; trying REST API fallback..."
+    }
+
+    # Fallback for environments where Atom is blocked but the API is available.
+    $commitUrl = "https://api.github.com/repos/$RepoOwner/$RepoName/commits/$Branch"
+    $latest = Invoke-RestMethod -Headers $Headers -Uri $commitUrl -TimeoutSec 15
+    $latestSha = [string]$latest.sha
+    if (-not $latestSha) { throw "GitHub did not return a commit SHA." }
+    return $latestSha
+}
+
 function Get-RawUrl([string]$sha, [string]$path) {
     $encoded = (($path -split "/") | ForEach-Object { [uri]::EscapeDataString($_) }) -join "/"
     return "https://raw.githubusercontent.com/$RepoOwner/$RepoName/$sha/$encoded"
@@ -120,10 +152,7 @@ if ($env:HCS_SKIP_UPDATE -match "^(1|true|yes)$") {
 New-Item -ItemType Directory -Force -Path $UpdateRoot | Out-Null
 
 try {
-    $commitUrl = "https://api.github.com/repos/$RepoOwner/$RepoName/commits/$Branch"
-    $latest = Invoke-RestMethod -Headers $Headers -Uri $commitUrl -TimeoutSec 15
-    $latestSha = [string]$latest.sha
-    if (-not $latestSha) { throw "GitHub did not return a commit SHA." }
+    $latestSha = Get-LatestCommitSha
 } catch {
     Write-Warning "Could not check GitHub for HCS-AI updates. Starting the installed version."
     Write-Warning $_.Exception.Message
