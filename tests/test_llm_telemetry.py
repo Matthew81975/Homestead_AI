@@ -34,6 +34,13 @@ class LlmTelemetryTests(unittest.TestCase):
         self.assertEqual(out["text"], "ok")
         resolver.assert_called_once()
         self.assertEqual(seen[-1], "chosen-model")
+        self.assertIn("backend_timings", out)
+        self.assertIn("prompt_meta", out)
+        self.assertIn("total_seconds", out["backend_timings"])
+        self.assertIn("model_resolve_seconds", out["backend_timings"])
+        self.assertEqual(out["prompt_meta"]["kb_hits"], 0)
+        self.assertEqual(len(out["backend_timings"]["rounds"]), 1)
+        self.assertIn("completion_seconds", out["backend_timings"]["rounds"][0])
 
 
 if __name__ == "__main__":
