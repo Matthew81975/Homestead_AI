@@ -87,7 +87,11 @@ def diagnostic_api(method, path, data=None, timeout=180):
                 http_method=method,
                 http_endpoint=path,
                 http_status=getattr(response, "status", 200),
-                context={"response_bytes": len(raw)},
+                context={
+                    "response_bytes": len(raw),
+                    "backend_timings": result.get("backend_timings") if isinstance(result, dict) else None,
+                    "prompt_meta": result.get("prompt_meta") if isinstance(result, dict) else None,
+                },
                 diagnostic_payload={"request": data, "response": result},
             )
             DIAGNOSTICS.update_telemetry(state="Ready", backend_state="running", backend_port=_endpoint_port())
