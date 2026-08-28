@@ -93,6 +93,22 @@ class App(tk.Tk):
         header = ttk.Frame(self.chat_tab)
         header.pack(fill="x", padx=8, pady=(6, 0))
         ttk.Label(header, text="Alexandria — HCS AI").pack(side="left")
+        ttk.Label(header, text="Mode:").pack(side="left", padx=(12, 2))
+        self.ai_mode_var = tk.StringVar(value="offline")
+        self.offline_mode_button = ttk.Radiobutton(
+            header, text="Offline", variable=self.ai_mode_var, value="offline",
+            command=lambda: self._set_ai_mode("offline"),
+        )
+        self.offline_mode_button.pack(side="left")
+        self.live_mode_button = ttk.Radiobutton(
+            header, text="Live", variable=self.ai_mode_var, value="live",
+            command=lambda: self._set_ai_mode("live"),
+        )
+        self.live_mode_button.pack(side="left", padx=(2, 8))
+        self.live_availability = ttk.Label(
+            header, text="Internet: checking... | Cloud AI: checking..."
+        )
+        self.live_availability.pack(side="left", padx=(2, 8))
         ttk.Button(header, text="Expand", command=self._expand_ai_console).pack(side="right")
         ttk.Button(header, text="Normal", command=self._set_ai_console_normal).pack(side="right", padx=4)
         ttk.Button(header, text="Collapse", command=self._collapse_ai_console).pack(side="right")
@@ -112,7 +128,45 @@ class App(tk.Tk):
         self.use_kb = tk.BooleanVar(value=True)
         ttk.Checkbutton(row, text="Use KB", variable=self.use_kb).pack(side="left", padx=8)
         self.status = ttk.Label(self.chat_tab, text="Checking server...")
+        self.after(1500, self._refresh_ai_mode_status)
         self.status.pack(anchor="w", padx=8, pady=(0,6))
+
+    def _set_ai_mode(self, mode: str):
+        previous = getattr(self, "_last_ai_mode", "offline")
+        try:
+            out = api("POST", "/ai/mode", {"mode": mode}, timeout=10)
+            self._apply_ai_mode_status(out)
+        except Exception as exc:
+            self.ai_mode_var.set(previous)
+            messagebox.showerror("AI mode", str(exc))
+
+    def _apply_ai_mode_status(self, out: dict):
+        selected = str(out.get("selected_mode") or "offline")
+        effective = str(out.get("effective_mode") or "offline")
+        self._last_ai_mode = selected
+        self.ai_mode_var.set(selected)
+        internet = bool(out.get("internet_available"))
+        cloud = bool(out.get("cloud_configured"))
+        live = bool(out.get("live_available"))
+        self.live_mode_button.configure(state="normal" if live else "disabled")
+        internet_text = "Available" if internet else "Unavailable"
+        cloud_text = "Ready" if cloud else "Not configured"
+        source = "Cloud" if effective == "live" else "Local"
+        self.live_availability.config(
+            text=f"Internet: {internet_text} | Cloud AI: {cloud_text} | AI: {source}"
+        )
+
+    def _refresh_ai_mode_status(self):
+        try:
+            if BASE:
+                self._apply_ai_mode_status(api("GET", "/ai/status", timeout=8))
+        except Exception:
+            self.live_mode_button.configure(state="disabled")
+            self.live_availability.config(
+                text="Internet: unknown | Cloud AI: unavailable | AI: Local"
+            )
+        finally:
+            self.after(10000, self._refresh_ai_mode_status)
 
     def _set_ai_sash(self, bottom_height: int):
         try:
