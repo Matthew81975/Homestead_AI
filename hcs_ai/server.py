@@ -1,9 +1,11 @@
 import json
+import urllib.error
+import urllib.request
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 import uvicorn
 
-from .config import load_config
+from .config import load_config, save_config
 from .db import init_db, connect, now_iso, audit
 from .llm import chat as llm_chat
 from .knowledge import import_path, search as kb_search, remove_source, active_sources
@@ -74,6 +76,9 @@ class InferenceConfigIn(BaseModel):
     model_path: str
     auto_start: bool = True
 
+class AIModeIn(BaseModel):
+    mode: str
+
 @app.on_event("startup")
 def startup():
     init_db()
@@ -112,6 +117,55 @@ def inference_config(inp: InferenceConfigIn):
         return engine.start() if inp.auto_start else engine.status()
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+def _ai_mode_status():
+    cfg = load_config()
+    selected = str(cfg.get("ai", {}).get("mode") or "offline").lower()
+    cloud = cfg.get("cloud_ai", {})
+    url = str(cloud.get("base_url") or "https://api.openai.com/v1").rstrip("/") + "/models"
+    timeout = float(cfg.get("ai", {}).get("connectivity_timeout_seconds", 2.0))
+    internet = False
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "HCS-AI/0.10"}, method="GET")
+        with urllib.request.urlopen(req, timeout=timeout):
+            internet = True
+    except urllib.error.HTTPError:
+        internet = True
+    except Exception:
+        internet = False
+    cloud_configured = bool(cloud.get("enabled") and str(cloud.get("model") or "").strip())
+    live_available = bool(internet and cloud_configured)
+    effective = "live" if selected == "live" and live_available else "offline"
+    return {
+        "selected_mode": selected,
+        "effective_mode": effective,
+        "internet_available": internet,
+        "cloud_configured": cloud_configured,
+        "live_available": live_available,
+        "cloud_provider": cloud.get("provider") or "cloud",
+        "cloud_model": cloud.get("model") or "",
+    }
+
+@app.get("/ai/status")
+def ai_status():
+    return _ai_mode_status()
+
+@app.post("/ai/mode")
+def ai_set_mode(inp: AIModeIn):
+    mode = str(inp.mode or "").strip().lower()
+    if mode not in ("offline", "live"):
+        raise HTTPException(status_code=400, detail="AI mode must be Offline or Live.")
+    status = _ai_mode_status()
+    if mode == "live" and not status["live_available"]:
+        if not status["internet_available"]:
+            raise HTTPException(status_code=400, detail="Live mode is unavailable: no Internet connection.")
+        raise HTTPException(status_code=400, detail="Internet is available, but cloud AI is not configured yet.")
+    cfg = load_config()
+    cfg.setdefault("ai", {})["mode"] = mode
+    save_config(cfg)
+    audit("ai_mode", mode)
+    return _ai_mode_status()
 
 @app.post("/chat")
 def chat(inp: ChatIn):
