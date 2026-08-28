@@ -21,10 +21,7 @@ class App(TreeApp):
 
     def __init__(self):
         super().__init__()
-        notebook = next(
-            (child for child in self.winfo_children() if isinstance(child, ttk.Notebook)),
-            None,
-        )
+        notebook = getattr(self, "tabs", None)
         if notebook is None:
             raise RuntimeError("HCS top-level notebook was not found.")
 
