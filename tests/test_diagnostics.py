@@ -73,3 +73,20 @@ def test_rotation_keeps_at_most_requested_sessions(tmp_path: Path):
         path.touch()
     DiagnosticsService(log_dir=log_dir, keep_sessions=10)
     assert len(list(log_dir.glob("hcs-session-*.jsonl"))) <= 10
+
+
+def test_token_counts_are_not_redacted_but_secret_tokens_are():
+    service = DiagnosticsService()
+    value = {
+        "prompt_tokens": 123,
+        "completion_tokens": 4,
+        "total_tokens": 127,
+        "token": "secret-value",
+        "access_token": "also-secret",
+    }
+    redacted = service._redact(value)
+    assert redacted["prompt_tokens"] == 123
+    assert redacted["completion_tokens"] == 4
+    assert redacted["total_tokens"] == 127
+    assert redacted["token"] == "<redacted>"
+    assert redacted["access_token"] == "<redacted>"
