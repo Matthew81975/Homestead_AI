@@ -88,29 +88,67 @@ def _resolve_model(client, llm, override=None):
 
 
 def chat(user_message: str, history=None, use_kb: bool = True, model: str | None = None):
+    total_started = time.perf_counter()
     cfg = load_config()
     llm = llm_config()
+
+    kb_started = time.perf_counter()
     context = ""
+    hits = []
     if use_kb:
         hits = kb_search(user_message, limit=4)
         if hits:
             context = "\n\nLOCAL KNOWLEDGE CONTEXT:\n" + "\n\n".join(
                 f"[{h['source']} #{h['chunk_index']}]\n{h['text']}" for h in hits
             )
+    kb_seconds = time.perf_counter() - kb_started
+
     messages = [{"role": "system", "content": cfg["app"]["system_prompt"] + context}]
     if history:
         messages.extend(history[-12:])
     messages.append({"role": "user", "content": user_message})
     url = llm["base_url"].rstrip("/") + "/chat/completions"
     all_results = []
+    round_timings = []
+
+    def finish(text, tool_mode):
+        return {
+            "text": text,
+            "tool_results": all_results,
+            "tool_mode": tool_mode,
+            "backend_timings": {
+                "total_seconds": time.perf_counter() - total_started,
+                "kb_seconds": kb_seconds,
+                "model_resolve_seconds": model_resolve_seconds,
+                "tool_definition_seconds": tool_definition_seconds,
+                "rounds": round_timings,
+            },
+            "prompt_meta": {
+                "message_count": len(messages),
+                "history_messages": min(len(history or []), 12),
+                "system_chars": len(cfg["app"]["system_prompt"]),
+                "kb_context_chars": len(context),
+                "kb_hits": len(hits),
+                "user_chars": len(user_message),
+            },
+        }
+
     with httpx.Client(timeout=llm["timeout_seconds"]) as client:
         tools_enabled = True
+
+        resolve_started = time.perf_counter()
         resolved_model = _resolve_model(client, llm, model)
+        model_resolve_seconds = time.perf_counter() - resolve_started
+
+        tools_started = time.perf_counter()
+        tool_definitions = _tool_definitions()
+        tool_definition_seconds = time.perf_counter() - tools_started
+
         payload = {
             "model": resolved_model,
             "messages": messages,
             "temperature": llm["temperature"],
-            "tools": _tool_definitions(),
+            "tools": tool_definitions,
             "tool_choice": "auto",
         }
         for _round in range(5):
@@ -119,21 +157,30 @@ def chat(user_message: str, history=None, use_kb: bool = True, model: str | None
             r, tools_enabled = _post_completion(
                 client, url, payload, allow_tool_fallback=tools_enabled
             )
-            elapsed = time.perf_counter() - started
+            completion_seconds = time.perf_counter() - started
             body = r.json()
             try:
-                record_response(resolved_model, body, elapsed)
+                record_response(resolved_model, body, completion_seconds)
             except Exception:
                 pass
+
             msg = body["choices"][0]["message"]
             tool_calls = msg.get("tool_calls") or []
+            round_info = {
+                "round": _round + 1,
+                "completion_seconds": completion_seconds,
+                "tool_calls": len(tool_calls),
+                "tools_enabled": tools_enabled,
+                "usage": body.get("usage") if isinstance(body.get("usage"), dict) else {},
+                "provider_timings": body.get("timings") if isinstance(body.get("timings"), dict) else {},
+            }
+            round_timings.append(round_info)
+
             if not tool_calls:
-                return {
-                    "text": msg.get("content", ""),
-                    "tool_results": all_results,
-                    "tool_mode": tools_enabled,
-                }
+                return finish(msg.get("content", ""), tools_enabled)
+
             messages.append(msg)
+            tool_started = time.perf_counter()
             for tc in tool_calls:
                 name = tc["function"]["name"]
                 try:
@@ -144,4 +191,6 @@ def chat(user_message: str, history=None, use_kb: bool = True, model: str | None
                     result_text, ok = json.dumps({"error": str(e)}), False
                 all_results.append({"tool": name, "ok": ok, "result": result_text[:8000]})
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result_text[:24000]})
-        return {"text": "I reached the tool-use round limit before completing the answer.", "tool_results": all_results}
+            round_info["tool_seconds"] = time.perf_counter() - tool_started
+
+        return finish("I reached the tool-use round limit before completing the answer.", tools_enabled)
