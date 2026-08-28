@@ -727,7 +727,7 @@ class App(tk.Tk):
         except Exception as e: messagebox.showerror("Internal AI",str(e))
 
     def launch_internal_setup(self):
-        script=Path(__file__).resolve().parent.parent / "setup_internal_ai.ps1"
+        script=Path(__file__).resolve().parent / "internal_ai_setup.ps1"
         if not script.is_file():
             messagebox.showerror(
                 "Internal AI Setup",
