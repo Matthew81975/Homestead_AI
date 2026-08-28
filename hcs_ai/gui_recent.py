@@ -69,7 +69,8 @@ class App(HomeApp):
         self.prompt.delete(0, "end")
         self.append_chat("You", msg)
         self.status.config(text="Generating...")
-        self.update()
+        # Process geometry/paint work without allowing nested Tk callbacks during a request.
+        self.update_idletasks()
         try:
             out = api(
                 "POST", "/chat",
