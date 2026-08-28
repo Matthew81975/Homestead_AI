@@ -187,6 +187,52 @@ class App(gui_recent.App):
         self.developer_status.pack(side="bottom", fill="x")
         self.after(350, self._refresh_diagnostics_ui)
 
+    def send(self):
+        """Run one chat request while preserving diagnostic controls and measuring wall time."""
+        if not self.prompt.get().strip():
+            return
+
+        development_mode = bool(self.dev_mode_var.get())
+        payload_capture = bool(self.payload_var.get())
+        self.diagnostics.development_mode = development_mode
+        self.diagnostics.capture_diagnostic_payloads = payload_capture
+
+        started = time.perf_counter()
+        self.diagnostics.update_telemetry(
+            state="Busy",
+            active_subsystem="Chat",
+            active_operation="request",
+        )
+        self.diagnostics.emit("INFO", "Chat", "request", "Chat request started")
+
+        try:
+            super().send()
+        finally:
+            elapsed = time.perf_counter() - started
+
+            # The request path must never change these user-controlled diagnostics flags.
+            self.diagnostics.development_mode = development_mode
+            self.diagnostics.capture_diagnostic_payloads = payload_capture
+            self.dev_mode_var.set(development_mode)
+            self.payload_var.set(payload_capture)
+
+            self.diagnostics.update_telemetry(
+                state="Ready",
+                last_response_seconds=elapsed,
+                diagnostic_payload_capture=payload_capture,
+                active_subsystem="Chat",
+                active_operation="complete",
+            )
+            self.diagnostics.emit(
+                "INFO",
+                "Chat",
+                "complete",
+                f"Chat request finished in {elapsed:.3f}s wall time",
+                elapsed_seconds=elapsed,
+                context={"wall_clock_seconds": elapsed},
+            )
+            self._refresh_status()
+
     def _build_log_tab(self):
         controls = ttk.Frame(self.log_tab)
         controls.pack(fill="x", padx=8, pady=8)
@@ -378,7 +424,6 @@ class App(gui_recent.App):
             if latest:
                 self.diagnostics.update_telemetry(
                     active_model=latest.get("model"),
-                    last_response_seconds=(float(latest.get("latency_ms")) / 1000.0) if latest.get("latency_ms") is not None else None,
                     prompt_tokens_per_second=latest.get("prompt_tokens_per_second"),
                     output_tokens_per_second=latest.get("generation_tokens_per_second"),
                     backend_state="running" if base_gui.BASE else "disconnected",
