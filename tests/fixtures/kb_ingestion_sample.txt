@@ -1,0 +1,17 @@
+HCS KNOWLEDGE BASE INGESTION TEST
+
+Solar Energy
+Photovoltaic solar panels convert sunlight directly into electrical energy. A solar array can charge batteries through a charge controller, and an inverter can provide AC power for household loads. Panel output depends on irradiance, panel orientation, temperature, shading, and system losses.
+
+Battery storage allows solar energy collected during the day to be used later. Lithium iron phosphate batteries are commonly used in stationary energy systems because they offer long cycle life and good thermal stability. Battery banks should be protected by appropriate fuses, disconnects, and a battery management system.
+
+Tomato Growing
+Tomatoes are warm-season plants that prefer full sun and well-drained soil. Consistent watering helps reduce fruit cracking and blossom-end rot. Mulch can reduce evaporation and suppress weeds while helping stabilize soil temperature.
+
+Indeterminate tomato varieties continue growing and producing fruit through the season, so they usually benefit from cages, stakes, or trellises. Pruning can improve airflow, although excessive pruning can expose fruit to sunscald.
+
+Cross-topic note
+A greenhouse can combine both subjects: solar panels may power ventilation fans, irrigation controls, environmental sensors, or supplemental lighting used for tomato production.
+
+TEST EXPECTATION
+Alexandria should recognize at least two distinct subject areas, such as Energy/Solar and Agriculture/Gardening/Tomatoes. The greenhouse paragraph may reasonably be linked to both areas rather than duplicated as unrelated knowledge.
