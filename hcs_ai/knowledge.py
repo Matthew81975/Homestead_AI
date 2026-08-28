@@ -56,91 +56,94 @@ def import_path(path_str: str) -> dict:
         f"Importing {len(files)} candidate file(s)",
         diagnostic_payload={"path": str(path)},
     )
-    with connect() as con:
-        for p in files:
-            if p.suffix.lower() not in SUPPORTED_EXTENSIONS:
-                continue
-            try:
-                text = _read_supported_file(p)
-            except Exception as exc:
-                DIAGNOSTICS.emit(
-                    "WARNING",
-                    "KnowledgeBase",
-                    "read",
-                    f"Could not read {p.name}: {exc}",
-                    diagnostic_payload={"path": str(p)},
-                    exception=traceback.format_exc(),
-                )
-                continue
-            if not text.strip():
-                continue
+    for p in files:
+        if p.suffix.lower() not in SUPPORTED_EXTENSIONS:
+            continue
+        try:
+            text = _read_supported_file(p)
+        except Exception as exc:
+            DIAGNOSTICS.emit(
+                "WARNING",
+                "KnowledgeBase",
+                "read",
+                f"Could not read {p.name}: {exc}",
+                diagnostic_payload={"path": str(p)},
+                exception=traceback.format_exc(),
+            )
+            continue
+        if not text.strip():
+            continue
+        chunks = chunk_text(text, size, overlap)
+        # Keep the SQLite write transaction short. Classification opens its own
+        # database connection, so holding this transaction open would cause
+        # "database is locked" when the classifier tries to register/link the artifact.
+        with connect() as con:
             con.execute("DELETE FROM kb_chunks WHERE source=?", (str(p),))
-            chunks = chunk_text(text, size, overlap)
             for i, chunk in enumerate(chunks):
                 con.execute(
                     "INSERT INTO kb_chunks(source, chunk_index, text) VALUES(?,?,?)",
                     (str(p), i, chunk),
                 )
-            imported += 1
-            chunks_total += len(chunks)
+        imported += 1
+        chunks_total += len(chunks)
+        DIAGNOSTICS.emit(
+            "INFO",
+            "KnowledgeBase",
+            "chunk",
+            f"Chunked {p.name} into {len(chunks)} chunk(s)",
+            context={"chunks": len(chunks), "characters": len(text)},
+            diagnostic_payload={"path": str(p)},
+        )
+
+        started = time.perf_counter()
+        try:
+            artifact_id = register_file_artifact(p)
             DIAGNOSTICS.emit(
                 "INFO",
                 "KnowledgeBase",
-                "chunk",
-                f"Chunked {p.name} into {len(chunks)} chunk(s)",
-                context={"chunks": len(chunks), "characters": len(text)},
+                "classification",
+                f"Classifying {p.name}",
+                context={"artifact_id": artifact_id, "characters": len(text)},
                 diagnostic_payload={"path": str(p)},
             )
-
-            started = time.perf_counter()
-            try:
-                artifact_id = register_file_artifact(p)
-                DIAGNOSTICS.emit(
-                    "INFO",
-                    "KnowledgeBase",
-                    "classification",
-                    f"Classifying {p.name}",
-                    context={"artifact_id": artifact_id, "characters": len(text)},
-                    diagnostic_payload={"path": str(p)},
-                )
-                classification = classify_artifact(
-                    artifact_id=artifact_id,
-                    title=p.name,
-                    artifact_type=p.suffix.lower().lstrip(".") or "file",
-                    text=text,
-                    metadata={"path": str(p), "extension": p.suffix.lower()},
-                )
-                elapsed = time.perf_counter() - started
-                classified += 1
-                links = classification.get("linked", [])
-                artifacts.append({
-                    "artifact_id": artifact_id,
-                    "path": str(p),
-                    "links": links,
-                    "pending_review_node_ids": classification.get("pending_review_node_ids", []),
-                })
-                DIAGNOSTICS.emit(
-                    "INFO",
-                    "KnowledgeBase",
-                    "classification",
-                    f"Classified {p.name} into {len(links)} Knowledge Tree link(s)",
-                    elapsed_seconds=elapsed,
-                    context={"artifact_id": artifact_id, "links": len(links)},
-                    diagnostic_payload={"path": str(p), "classification": classification},
-                )
-            except Exception as exc:
-                elapsed = time.perf_counter() - started
-                error = {"path": str(p), "error": str(exc)}
-                classification_errors.append(error)
-                DIAGNOSTICS.emit(
-                    "ERROR",
-                    "KnowledgeBase",
-                    "classification",
-                    f"Classification failed for {p.name}: {exc}",
-                    elapsed_seconds=elapsed,
-                    diagnostic_payload=error,
-                    exception=traceback.format_exc(),
-                )
+            classification = classify_artifact(
+                artifact_id=artifact_id,
+                title=p.name,
+                artifact_type=p.suffix.lower().lstrip(".") or "file",
+                text=text,
+                metadata={"path": str(p), "extension": p.suffix.lower()},
+            )
+            elapsed = time.perf_counter() - started
+            classified += 1
+            links = classification.get("linked", [])
+            artifacts.append({
+                "artifact_id": artifact_id,
+                "path": str(p),
+                "links": links,
+                "pending_review_node_ids": classification.get("pending_review_node_ids", []),
+            })
+            DIAGNOSTICS.emit(
+                "INFO",
+                "KnowledgeBase",
+                "classification",
+                f"Classified {p.name} into {len(links)} Knowledge Tree link(s)",
+                elapsed_seconds=elapsed,
+                context={"artifact_id": artifact_id, "links": len(links)},
+                diagnostic_payload={"path": str(p), "classification": classification},
+            )
+        except Exception as exc:
+            elapsed = time.perf_counter() - started
+            error = {"path": str(p), "error": str(exc)}
+            classification_errors.append(error)
+            DIAGNOSTICS.emit(
+                "ERROR",
+                "KnowledgeBase",
+                "classification",
+                f"Classification failed for {p.name}: {exc}",
+                elapsed_seconds=elapsed,
+                diagnostic_payload=error,
+                exception=traceback.format_exc(),
+            )
     return {
         "files_imported": imported,
         "chunks": chunks_total,
