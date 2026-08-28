@@ -48,9 +48,85 @@ def _post_completion(client, url, payload, allow_tool_fallback=True):
     raise RuntimeError(f"The local model engine returned HTTP {response.status_code}: {_response_error(response)}")
 
 
-def _tool_definitions():
+def _select_tool_specs(user_message: str):
+    """Return only tools plausibly needed for this request.
+
+    Small local models pay a large prompt-evaluation cost for every tool schema,
+    so ordinary conversation should carry no tools at all.
+    """
+    text = (user_message or "").casefold()
+    specs = {item["name"]: item for item in public_tool_specs()}
+    selected = set()
+
+    def add(*names):
+        for name in names:
+            if name in specs:
+                selected.add(name)
+
+    # Explicit escape hatch for development/testing or requests that truly need
+    # broad autonomous tool access.
+    if any(phrase in text for phrase in (
+        "all tools", "full tool access", "use any tool", "available tools",
+    )):
+        return list(specs.values())
+
+    # Host/system inspection.
+    if any(term in text for term in (
+        "system info", "computer info", "cpu", "ram", "memory usage",
+        "running process", "running processes", "process list", "task manager",
+    )):
+        add("system_info", "list_processes")
+
+    # Local filesystem inspection.
+    if any(term in text for term in (
+        "list directory", "list folder", "show files", "show folder",
+        "read file", "read text file", "open text file", "directory contents",
+    )):
+        add("list_directory", "read_text_file")
+
+    # Environment inspection.
+    if any(term in text for term in (
+        "environment variable", "environment variables", "env var", "env vars",
+    )):
+        add("environment_variables")
+
+    # HKR/library retrieval.
+    if any(term in text for term in (
+        "hkr", "library", "source", "sources", "research", "look up in",
+        "search knowledge", "search the knowledge", "find in knowledge",
+    )):
+        add("search_hkr_library", "read_hkr_source")
+
+    # Algorithms and implementation knowledge.
+    if any(term in text for term in (
+        "algorithm", "pseudocode", "complexity", "big-o", "big o",
+    )):
+        add("search_hkr_algorithms", "get_hkr_algorithm", "code_hkr_algorithm")
+
+    # Python package/software catalog.
+    if any(term in text for term in (
+        "python package", "pypi", "pip package", "package dependency",
+        "package dependencies", "wheel",
+    )):
+        add("find_python_package", "search_hkr_software")
+
+    # Explicit acquisition/caching actions.
+    if any(term in text for term in (
+        "cache package", "download package", "cache python", "offline package",
+    )):
+        add("find_python_package", "cache_python_package", "cache_python_bundle", "search_hkr_software")
+
+    if any(term in text for term in (
+        "research and add", "research this", "find new sources", "acquire sources",
+    )):
+        add("search_hkr_library", "read_hkr_source", "research_hkr")
+
+    return [specs[name] for name in specs if name in selected]
+
+
+def _tool_definitions(specs=None):
     defs = []
-    for t in public_tool_specs():
+    for t in (public_tool_specs() if specs is None else specs):
         props, required = {}, []
         for k, desc in t["schema"].items():
             typ = "string"
@@ -130,6 +206,8 @@ def chat(user_message: str, history=None, use_kb: bool = True, model: str | None
                 "kb_context_chars": len(context),
                 "kb_hits": len(hits),
                 "user_chars": len(user_message),
+                "selected_tools": sorted(selected_tool_names),
+                "selected_tool_count": len(selected_tool_names),
             },
         }
 
@@ -141,16 +219,19 @@ def chat(user_message: str, history=None, use_kb: bool = True, model: str | None
         model_resolve_seconds = time.perf_counter() - resolve_started
 
         tools_started = time.perf_counter()
-        tool_definitions = _tool_definitions()
+        selected_tool_specs = _select_tool_specs(user_message)
+        tool_definitions = _tool_definitions(selected_tool_specs)
+        selected_tool_names = {item["name"] for item in selected_tool_specs}
         tool_definition_seconds = time.perf_counter() - tools_started
 
         payload = {
             "model": resolved_model,
             "messages": messages,
             "temperature": llm["temperature"],
-            "tools": tool_definitions,
-            "tool_choice": "auto",
         }
+        if tool_definitions:
+            payload["tools"] = tool_definitions
+            payload["tool_choice"] = "auto"
         for _round in range(5):
             payload["messages"] = messages
             started = time.perf_counter()
@@ -166,7 +247,7 @@ def chat(user_message: str, history=None, use_kb: bool = True, model: str | None
 
             msg = body["choices"][0]["message"]
             tool_calls = msg.get("tool_calls") or []
-            allowed_tool_names = {item["name"] for item in public_tool_specs()}
+            allowed_tool_names = selected_tool_names
             valid_tool_calls = [
                 tc for tc in tool_calls
                 if isinstance(tc, dict)
