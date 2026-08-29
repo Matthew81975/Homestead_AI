@@ -32,6 +32,15 @@ def _healthy(route, now):
     return _cooldowns.get(route["id"], 0.0) <= now
 
 
+def _credential_configured(route):
+    key_name = str(route.get("api_key_env") or "").strip()
+    return bool(key_name and os.environ.get(key_name))
+
+
+def _available(route, now):
+    return _healthy(route, now) and _credential_configured(route)
+
+
 def _weighted_order(routes):
     expanded = []
     for route in routes:
@@ -56,13 +65,13 @@ def _ordered_candidates(routes, tier, current_model, now):
         r for r in routes
         if r.get("tier") == tier
         and r.get("model") == current_model
-        and _healthy(r, now)
+        and _available(r, now)
     ]
     same_tier = [
         r for r in routes
         if r.get("tier") == tier
         and r.get("model") != current_model
-        and _healthy(r, now)
+        and _available(r, now)
     ]
     return _weighted_order(same_model) + _weighted_order(same_tier)
 
@@ -70,7 +79,7 @@ def _ordered_candidates(routes, tier, current_model, now):
 def _next_other_tier(routes, current_tier, now):
     candidates = [
         r for r in routes
-        if r.get("tier") != current_tier and _healthy(r, now)
+        if r.get("tier") != current_tier and _available(r, now)
     ]
     ordered = _weighted_order(candidates)
     return ordered[0] if ordered else None
@@ -89,7 +98,7 @@ def cloud_status() -> dict:
     cfg = load_config().get("cloud_ai", {})
     routes = _routes()
     now = time.monotonic()
-    healthy = [r for r in routes if _healthy(r, now)]
+    healthy = [r for r in routes if _available(r, now)]
     return {
         "enabled": bool(cfg.get("enabled")),
         "configured_routes": len(routes),
@@ -123,22 +132,25 @@ def model_inventory(task_id: str | None = None) -> dict:
                 "providers": [],
             },
         )
-        healthy = _healthy(route, now)
+        runtime_healthy = _healthy(route, now)
+        credential_configured = _credential_configured(route)
+        healthy = runtime_healthy and credential_configured
         group["configured_routes"] += 1
         if healthy:
             group["healthy_routes"] += 1
-        key_name = str(route.get("api_key_env") or "").strip()
-        credential_configured = bool(key_name and os.environ.get(key_name))
         is_active = bool(
             tier == active_tier
             and model == active_model
             and route.get("provider") == active_provider
         )
         cooldown_until = _cooldowns.get(route["id"], 0.0)
-        if cooldown_until == float("inf"):
+        if not credential_configured:
+            route_state = "missing_key"
+            cooldown_remaining = None
+        elif cooldown_until == float("inf"):
             route_state = "unavailable"
             cooldown_remaining = None
-        elif healthy:
+        elif runtime_healthy:
             route_state = "active" if is_active else "ready"
             cooldown_remaining = 0.0
         else:
@@ -194,7 +206,10 @@ def chat(task_id: str, messages: list[dict], tools: list[dict] | None = None) ->
     current_model = state.get("model")
 
     if not current_model:
-        first = next((r for r in routes if r.get("tier") == tier), None)
+        first = next(
+            (r for r in routes if r.get("tier") == tier and _available(r, time.monotonic())),
+            None,
+        )
         if not first:
             raise RuntimeError(f"No cloud route is configured for capability tier: {tier}")
         current_model = first["model"]
