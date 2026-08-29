@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import threading
+import uuid
 from pathlib import Path
 from .config import ROOT
 from .ports import port_candidates, saved_endpoint
@@ -58,6 +59,8 @@ class App(tk.Tk):
         self.history = []
         self._thinking = False
         self._thinking_frame = 0
+        self.cloud_task_id = "alexandria-" + uuid.uuid4().hex
+        self._pending_cloud_request = None
         self._install_clipboard_bindings()
 
         # Main workspace: persistent tabbed tools above, Alexandria console below.
@@ -229,6 +232,13 @@ class App(tk.Tk):
             header, text="Internet: checking... | Cloud AI: checking..."
         )
         self.live_availability.pack(side="left", padx=(2, 8))
+        ttk.Button(
+            header,
+            text="Cloud Models",
+            command=self.show_cloud_models,
+        ).pack(side="left", padx=(2, 8))
+        self.cloud_route_label = ttk.Label(header, text="Cloud: —")
+        self.cloud_route_label.pack(side="left", padx=(4, 8))
         self.thinking_label = ttk.Label(header, text="")
         self.thinking_label.pack(side="left", padx=(4, 8))
         self.git_update_label = ttk.Label(header, text="Git: checking...")
@@ -256,6 +266,117 @@ class App(tk.Tk):
         self.after(1500, self._refresh_ai_mode_status)
         self.status.pack(anchor="w", padx=8, pady=(0,6))
 
+    def show_cloud_models(self):
+        window = tk.Toplevel(self)
+        window.title("Cloud Model Pool")
+        window.geometry("900x480")
+
+        ttk.Label(
+            window,
+            text="Cloud Model Pool — models grouped by capability tier and provider",
+        ).pack(anchor="w", padx=10, pady=(10, 4))
+
+        frame = ttk.Frame(window)
+        frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        columns = ("providers", "routes", "failover", "state")
+        tree = ttk.Treeview(frame, columns=columns, show="tree headings")
+        self.cloud_models_tree = tree
+        tree.heading("#0", text="Tier / Model / Provider")
+        tree.heading("providers", text="Providers")
+        tree.heading("routes", text="Healthy / Configured")
+        tree.heading("failover", text="Auto failover")
+        tree.heading("state", text="State / Credential")
+        tree.column("#0", width=280, stretch=True)
+        tree.column("providers", width=190, stretch=True)
+        tree.column("routes", width=120, anchor="center")
+        tree.column("failover", width=110, anchor="center")
+        tree.column("state", width=170, stretch=True)
+        scroll = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=scroll.set)
+        tree.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="right", fill="y")
+        loading = tree.insert("", "end", text="Loading cloud models...")
+
+        def work():
+            try:
+                out = api(
+                    "GET",
+                    "/ai/models?task_id=" + urllib.parse.quote(self.cloud_task_id),
+                    timeout=12,
+                )
+                self.after(
+                    0,
+                    lambda data=out, t=tree: self._populate_cloud_models(t, data),
+                )
+            except Exception as exc:
+                self.after(
+                    0,
+                    lambda message=str(exc), t=tree, item=loading: (
+                        t.item(item, text="Unable to load cloud models"),
+                        t.set(item, "state", message),
+                    ),
+                )
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _populate_cloud_models(self, tree, data):
+        for item in tree.get_children():
+            tree.delete(item)
+
+        for tier_info in data.get("tiers", []):
+            tier_name = str(tier_info.get("tier") or "unassigned")
+            tier_item = tree.insert(
+                "",
+                "end",
+                text=tier_name.upper(),
+                open=True,
+            )
+            for model_info in tier_info.get("models", []):
+                providers = model_info.get("providers", [])
+                provider_names = ", ".join(
+                    str(p.get("provider") or "")
+                    for p in providers
+                    if p.get("provider")
+                )
+                active = bool(model_info.get("active"))
+                model_name = str(model_info.get("model") or "")
+                display_name = ("★ " if active else "") + model_name
+                healthy = int(model_info.get("healthy_routes", 0))
+                configured = int(model_info.get("configured_routes", 0))
+                model_state = "Active" if active else (
+                    "Ready" if healthy else "Unavailable"
+                )
+                model_item = tree.insert(
+                    tier_item,
+                    "end",
+                    text=display_name,
+                    values=(
+                        provider_names,
+                        f"{healthy} / {configured}",
+                        "Yes" if model_info.get("same_tier_failover_eligible") else "No",
+                        model_state,
+                    ),
+                    open=active,
+                )
+                for provider in providers:
+                    key_state = (
+                        "Key: Ready"
+                        if provider.get("credential_configured")
+                        else "Key: Missing"
+                    )
+                    route_state = str(provider.get("state") or "unknown").title()
+                    tree.insert(
+                        model_item,
+                        "end",
+                        text=str(provider.get("provider") or "provider"),
+                        values=(
+                            "",
+                            "1 / 1" if provider.get("healthy") else "0 / 1",
+                            "",
+                            f"{route_state} | {key_state}",
+                        ),
+                    )
+
     def _set_ai_mode(self, mode: str):
         previous = getattr(self, "_last_ai_mode", "offline")
         try:
@@ -280,6 +401,15 @@ class App(tk.Tk):
         self.live_availability.config(
             text=f"Internet: {internet_text} | Cloud AI: {cloud_text} | AI: {source}"
         )
+        if effective != "live":
+            self.cloud_route_label.config(text="Cloud: —")
+        elif not self.cloud_route_label.cget("text").startswith("Cloud: ") or self.cloud_route_label.cget("text") == "Cloud: —":
+            pool = out.get("cloud_pool") or {}
+            healthy = pool.get("healthy_routes", 0)
+            configured = pool.get("configured_routes", 0)
+            self.cloud_route_label.config(
+                text=f"Cloud: ready | {healthy}/{configured} routes"
+            )
 
     def _refresh_ai_mode_status(self):
         try:
@@ -345,38 +475,96 @@ class App(tk.Tk):
         msg = self.prompt.get().strip()
         if not msg or self._thinking:
             return
-        history = list(self.history[-12:])
-        use_kb = bool(self.use_kb.get())
+        payload = {
+            "message": msg,
+            "history": list(self.history[-12:]),
+            "use_kb": bool(self.use_kb.get()),
+            "task_id": self.cloud_task_id,
+        }
+        self._pending_cloud_request = payload
         self.prompt.delete(0, "end")
         self.append_chat("You", msg)
         self._set_thinking(True)
+        self._dispatch_chat_payload(payload)
 
+    def _dispatch_chat_payload(self, payload):
         def work():
             try:
-                out = api("POST", "/chat", {
-                    "message": msg,
-                    "history": history,
-                    "use_kb": use_kb,
-                })
-                self.after(0, lambda o=out, m=msg: self._chat_done(m, o))
+                out = api("POST", "/chat", payload)
+                self.after(
+                    0,
+                    lambda o=out, m=payload["message"]: self._chat_done(m, o),
+                )
             except Exception as exc:
                 self.after(0, lambda m=str(exc): self._chat_failed(m))
 
         threading.Thread(target=work, daemon=True).start()
 
+    def _retry_pending_cloud_request(self):
+        payload = self._pending_cloud_request
+        if not payload:
+            return
+        self._set_thinking(True)
+        self._dispatch_chat_payload(payload)
+
     def _chat_done(self, msg, out):
+        if out.get("approval_required"):
+            self._set_thinking(False)
+            approved = messagebox.askyesno(
+                "Cloud model change",
+                out.get("message") or (
+                    f"Continue by changing capability tier from "
+                    f"{out.get('current_tier')} to {out.get('proposed_tier')}?"
+                ),
+            )
+            if approved:
+                try:
+                    api(
+                        "POST",
+                        "/ai/approve-tier",
+                        {
+                            "task_id": self.cloud_task_id,
+                            "tier": out["proposed_tier"],
+                        },
+                        timeout=10,
+                    )
+                except Exception as exc:
+                    self._pending_cloud_request = None
+                    self.append_chat("Error", str(exc))
+                    return
+                self._retry_pending_cloud_request()
+            else:
+                self._pending_cloud_request = None
+                self.append_chat(
+                    "HCS-AI",
+                    "Cloud task paused. Model caliber was not changed.",
+                )
+            return
+
         self._set_thinking(False)
+        if out.get("provider") and out.get("model"):
+            self.cloud_route_label.config(
+                text=(
+                    f"Cloud: {out.get('tier', '?')} | "
+                    f"{out['provider']} | {out['model']}"
+                )
+            )
         text = out.get("text", "")
         self.append_chat("HCS-AI", text)
         self.history += [
             {"role": "user", "content": msg},
             {"role": "assistant", "content": text},
         ]
+        self._pending_cloud_request = None
         if out.get("tool_results"):
-            self.append_chat("Tools", json.dumps(out["tool_results"], indent=2)[:5000])
+            self.append_chat(
+                "Tools",
+                json.dumps(out["tool_results"], indent=2)[:5000],
+            )
 
     def _chat_failed(self, message):
         self._set_thinking(False)
+        self._pending_cloud_request = None
         self.append_chat("Error", message)
 
     def _refresh_git_update_status(self):
