@@ -15,22 +15,52 @@ $serverExe = Join-Path $runtimeDir "llama-server.exe"
 
 if (-not (Test-Path $serverExe)) {
     Write-Host "Installing the current llama.cpp Windows CPU runtime..."
-    Write-Host "Resolving the latest release without using the GitHub API..."
+    Write-Host "Resolving a release that actually contains the Windows CPU x64 package..."
 
-    $latestUrl = "https://github.com/ggml-org/llama.cpp/releases/latest"
-    $effective = (& curl.exe -L -s -o NUL -w "%{url_effective}" $latestUrl).Trim()
-    if ($LASTEXITCODE -ne 0 -or -not $effective) {
-        throw "Could not resolve the latest llama.cpp release from GitHub."
+    $headers = @{
+        "User-Agent" = "HCS-AI-Installer"
+        "Accept" = "application/vnd.github+json"
     }
 
-    if ($effective -notmatch "/releases/tag/([^/?#]+)") {
-        throw "Could not determine the llama.cpp release tag from: $effective"
-    }
-    $tag = $Matches[1]
-    Write-Host "Latest llama.cpp release: $tag"
+    $asset = $null
+    $releaseTag = $null
 
-    $assetName = "llama-$tag-bin-win-cpu-x64.zip"
-    $assetUrl = "https://github.com/ggml-org/llama.cpp/releases/download/$tag/$assetName"
+    try {
+        # Do not trust /releases/latest here. Inspect real release assets and
+        # choose one that actually contains the Windows CPU archive HCS needs.
+        $releaseCandidates = Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=30" -TimeoutSec 30
+
+        foreach ($candidate in @($releaseCandidates)) {
+            if ($candidate.draft) { continue }
+
+            $candidateAsset = @($candidate.assets) |
+                Where-Object { $_.name -match "^llama-.*-bin-win-cpu-x64\.zip$" } |
+                Select-Object -First 1
+
+            if ($candidateAsset) {
+                $asset = $candidateAsset
+                $releaseTag = [string]$candidate.tag_name
+                break
+            }
+        }
+    }
+    catch {
+        throw "Could not query llama.cpp releases from GitHub: $($_.Exception.Message)"
+    }
+
+    if (-not $asset) {
+        throw "No recent llama.cpp release contained a Windows CPU x64 package."
+    }
+
+    $assetName = [string]$asset.name
+    $assetUrl = [string]$asset.browser_download_url
+
+    if (-not $assetUrl) {
+        throw "GitHub returned the llama.cpp asset without a download URL."
+    }
+
+    Write-Host "Selected llama.cpp release: $releaseTag"
+    Write-Host "Selected asset: $assetName"
 
     $tempBase = Join-Path ([IO.Path]::GetTempPath()) ("hcs-llama-" + [guid]::NewGuid())
     $zipPath = "$tempBase.zip"
@@ -41,6 +71,14 @@ if (-not (Test-Path $serverExe)) {
         & curl.exe -L --fail --retry 3 --retry-delay 2 --output $zipPath $assetUrl
         if ($LASTEXITCODE -ne 0) {
             throw "The llama.cpp runtime download failed with curl exit code $LASTEXITCODE."
+        }
+
+        if (-not (Test-Path $zipPath)) {
+            throw "The llama.cpp download reported success but no archive was created."
+        }
+
+        if ((Get-Item $zipPath).Length -lt 1MB) {
+            throw "The downloaded llama.cpp archive is unexpectedly small and was rejected."
         }
 
         New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
