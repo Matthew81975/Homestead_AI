@@ -16,3 +16,9 @@ def test_gui_displays_cloud_route_metadata():
 def test_gui_has_cross_tier_approval_call():
     assert '"/ai/approve-tier"' in GUI
     assert "askyesno" in GUI
+
+
+def test_gui_has_cloud_model_pool_view():
+    assert '"/ai/models' in GUI
+    assert "Cloud Models" in GUI
+    assert "cloud_models" in GUI
