@@ -193,6 +193,11 @@ def ai_set_mode(inp: AIModeIn):
     audit("ai_mode", mode)
     return _ai_mode_status()
 
+@app.get("/ai/models")
+def ai_models(task_id: str | None = None):
+    return cloud_router.model_inventory(task_id)
+
+
 @app.post("/ai/approve-tier")
 def ai_approve_tier(inp: TierApprovalIn):
     return cloud_router.approve_tier_change(inp.task_id, inp.tier)
