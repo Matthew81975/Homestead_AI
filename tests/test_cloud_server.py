@@ -66,3 +66,43 @@ def test_ai_models_endpoint_is_secret_free(monkeypatch):
     response = client.get("/ai/models?task_id=t1")
     assert response.status_code == 200
     assert "api_key" not in response.text.lower()
+
+
+def test_live_chat_audits_each_route_event(monkeypatch):
+    events = []
+    monkeypatch.setattr(server, "audit", lambda kind, detail: events.append((kind, detail)))
+    monkeypatch.setattr(server, "_ai_mode_status", lambda: {"effective_mode": "live"})
+    monkeypatch.setattr(
+        server.cloud_router,
+        "chat",
+        lambda task_id, messages, tools=None: {
+            "text": "cloud",
+            "provider": "p2",
+            "model": "m1",
+            "tier": "high",
+            "approval_required": False,
+            "route_events": [
+                {
+                    "route": "a",
+                    "provider": "p1",
+                    "model": "m1",
+                    "tier": "high",
+                    "outcome": "failure",
+                    "reason": "rate_limit",
+                },
+                {
+                    "route": "b",
+                    "provider": "p2",
+                    "model": "m1",
+                    "tier": "high",
+                    "outcome": "success",
+                    "reason": "completed",
+                },
+            ],
+        },
+    )
+    response = client.post("/chat", json={"message": "hi", "history": [], "task_id": "t-events"})
+    assert response.status_code == 200
+    route_audits = [detail for kind, detail in events if kind == "cloud_route_event"]
+    assert len(route_audits) == 2
+    assert "rate_limit" in route_audits[0]
