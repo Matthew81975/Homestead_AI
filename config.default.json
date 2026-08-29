@@ -44,8 +44,8 @@
   },
   "cloud_ai": {
     "enabled": false,
-    "provider": "openai",
-    "base_url": "https://api.openai.com/v1",
-    "model": ""
+    "default_tier": "high",
+    "cooldown_seconds": 60,
+    "routes": []
   }
 }
