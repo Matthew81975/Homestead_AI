@@ -23,6 +23,11 @@ class FakeProvider:
         }
 
 
+def _set_all_keys(monkeypatch):
+    for name in ("A", "B", "C", "D"):
+        monkeypatch.setenv(name, "test-key")
+
+
 def _cfg():
     return {
         "cloud_ai": {
@@ -40,6 +45,7 @@ def _cfg():
 
 
 def test_prefers_same_exact_model_on_failover(monkeypatch):
+    _set_all_keys(monkeypatch)
     monkeypatch.setattr(cloud_router, "load_config", _cfg)
     monkeypatch.setattr(cloud_router, "provider_factory", FakeProvider)
     cloud_router.reset_runtime_state()
@@ -56,6 +62,7 @@ def test_prefers_same_exact_model_on_failover(monkeypatch):
 
 
 def test_same_tier_model_change_is_automatic(monkeypatch):
+    _set_all_keys(monkeypatch)
     monkeypatch.setattr(cloud_router, "load_config", _cfg)
     monkeypatch.setattr(cloud_router, "provider_factory", FakeProvider)
     cloud_router.reset_runtime_state()
@@ -72,6 +79,7 @@ def test_same_tier_model_change_is_automatic(monkeypatch):
 
 
 def test_cross_tier_change_requires_approval(monkeypatch):
+    _set_all_keys(monkeypatch)
     monkeypatch.setattr(cloud_router, "load_config", _cfg)
     monkeypatch.setattr(cloud_router, "provider_factory", FakeProvider)
     cloud_router.reset_runtime_state()
@@ -88,6 +96,7 @@ def test_cross_tier_change_requires_approval(monkeypatch):
 
 
 def test_approved_tier_change_allows_continuation(monkeypatch):
+    _set_all_keys(monkeypatch)
     monkeypatch.setattr(cloud_router, "load_config", _cfg)
     monkeypatch.setattr(cloud_router, "provider_factory", FakeProvider)
     cloud_router.reset_runtime_state()
@@ -136,3 +145,34 @@ def test_model_inventory_never_returns_secret_value(monkeypatch):
     cloud_router.reset_runtime_state()
     payload = json.dumps(cloud_router.model_inventory("task-secret"))
     assert "DO_NOT_LEAK_ME" not in payload
+
+
+def test_cloud_status_counts_only_credential_ready_routes(monkeypatch):
+    monkeypatch.setattr(cloud_router, "load_config", _cfg)
+    monkeypatch.setenv("A", "ready")
+    monkeypatch.delenv("B", raising=False)
+    monkeypatch.delenv("C", raising=False)
+    monkeypatch.delenv("D", raising=False)
+    cloud_router.reset_runtime_state()
+    status = cloud_router.cloud_status()
+    assert status["configured_routes"] == 4
+    assert status["healthy_routes"] == 1
+
+
+def test_chat_skips_route_with_missing_credential(monkeypatch):
+    monkeypatch.setattr(cloud_router, "load_config", _cfg)
+    monkeypatch.setattr(cloud_router, "provider_factory", FakeProvider)
+    monkeypatch.delenv("A", raising=False)
+    monkeypatch.setenv("B", "ready")
+    monkeypatch.delenv("C", raising=False)
+    monkeypatch.delenv("D", raising=False)
+    cloud_router.reset_runtime_state()
+    FakeProvider.outcomes = {
+        "a": "should not be used",
+        "b": "usable",
+        "c": "should not be used",
+        "d": "should not be used",
+    }
+    result = cloud_router.chat("task-key-filter", [{"role": "user", "content": "hi"}])
+    assert result["provider"] == "p2"
+    assert result["text"] == "usable"
