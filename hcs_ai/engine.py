@@ -1,5 +1,6 @@
 import json
 import os
+import shlex
 import socket
 import subprocess
 import threading
@@ -15,6 +16,7 @@ LOG_PATH = ROOT / "data" / "llama-server.log"
 _lock = threading.RLock()
 _process = None
 _log_handle = None
+_last_command = []
 
 
 def _resolve(path_value):
@@ -38,12 +40,19 @@ def _write_state(**state):
     STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 
-def _log_tail(max_chars=4000):
+def _log_tail(max_chars=12000):
     try:
         text = LOG_PATH.read_text(encoding="utf-8", errors="replace")
         return text[-max_chars:].strip()
     except OSError:
         return ""
+
+
+def _format_command(args):
+    try:
+        return subprocess.list2cmdline([str(x) for x in args])
+    except Exception:
+        return " ".join(shlex.quote(str(x)) for x in args)
 
 
 def status():
@@ -74,35 +83,60 @@ def status():
         "ready": ready,
         "phase": phase,
         "error": state.get("error"),
-        "pid": _process.pid if running else None,
+        "exit_code": state.get("exit_code"),
+        "pid": _process.pid if running else state.get("pid"),
         "port": state.get("port"),
         "executable": str(exe),
         "executable_found": exe.is_file(),
         "model_path": str(model),
         "model_found": model.is_file(),
+        "command": state.get("command"),
         "auto_start": bool(cfg.get("auto_start", True)),
         "log_path": str(LOG_PATH),
     }
 
 
+def _startup_failure_message(exit_code=None):
+    cfg = load_config().get("inference", {})
+    exe = _resolve(cfg.get("executable"))
+    model = _resolve(cfg.get("model_path"))
+    command = _format_command(_last_command) if _last_command else "(command unavailable)"
+    tail = _log_tail()
+    pieces = [
+        "The selected model server exited before becoming ready.",
+        f"Exit code: {exit_code if exit_code is not None else 'unknown'}",
+        f"Engine: {exe}",
+        f"Model: {model}",
+        f"Command: {command}",
+    ]
+    if tail:
+        pieces.append("llama-server log:\n" + tail)
+    return "\n".join(pieces)
+
+
 def _wait_until_ready(timeout_seconds=90):
     deadline = time.monotonic() + max(1.0, float(timeout_seconds))
     while time.monotonic() < deadline:
-        if _process is None or _process.poll() is not None:
-            tail = _log_tail()
-            detail = f"\n\nllama-server log:\n{tail}" if tail else ""
-            raise RuntimeError(f"The selected model server exited before becoming ready.{detail}")
+        if _process is None:
+            raise RuntimeError(_startup_failure_message(None))
+        exit_code = _process.poll()
+        if exit_code is not None:
+            raise RuntimeError(_startup_failure_message(exit_code))
         current = status()
         if current.get("ready"):
             return current
         time.sleep(0.25)
     tail = _log_tail()
     detail = f"\n\nllama-server log:\n{tail}" if tail else ""
-    raise RuntimeError(f"The selected model did not become ready within {timeout_seconds:.0f} seconds.{detail}")
+    command = _format_command(_last_command) if _last_command else "(command unavailable)"
+    raise RuntimeError(
+        f"The selected model did not become ready within {timeout_seconds:.0f} seconds.\n"
+        f"Command: {command}{detail}"
+    )
 
 
 def start():
-    global _process, _log_handle
+    global _process, _log_handle, _last_command
     with _lock:
         if _process is not None and _process.poll() is None:
             current = status()
@@ -126,6 +160,9 @@ def start():
             "--jinja",
         ]
         args.extend(str(x) for x in cfg.get("extra_args", []))
+        _last_command = list(args)
+        command = _format_command(args)
+
         LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         _log_handle = LOG_PATH.open("a", encoding="utf-8")
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -137,8 +174,11 @@ def start():
             port=port,
             pid=_process.pid,
             model_path=str(model),
+            executable=str(exe),
+            command=command,
             phase="starting",
             error=None,
+            exit_code=None,
         )
         try:
             _wait_until_ready(float(cfg.get("startup_timeout_seconds", 90)))
@@ -146,13 +186,39 @@ def start():
                 port=port,
                 pid=_process.pid,
                 model_path=str(model),
+                executable=str(exe),
+                command=command,
                 phase="ready",
                 error=None,
+                exit_code=None,
             )
             return status()
         except Exception as exc:
-            stop()
-            _write_state(model_path=str(model), phase="failed", error=str(exc))
+            exit_code = None
+            if _process is not None:
+                exit_code = _process.poll()
+            if _process is not None and _process.poll() is None:
+                _process.terminate()
+                try:
+                    _process.wait(timeout=8)
+                except subprocess.TimeoutExpired:
+                    _process.kill()
+                    _process.wait(timeout=2)
+                exit_code = _process.returncode
+            if _log_handle:
+                _log_handle.close()
+            _process = None
+            _log_handle = None
+            _write_state(
+                port=port,
+                pid=None,
+                model_path=str(model),
+                executable=str(exe),
+                command=command,
+                phase="failed",
+                error=str(exc),
+                exit_code=exit_code,
+            )
             raise
 
 
@@ -174,6 +240,7 @@ def stop():
             model_path=str(_resolve(cfg.get("model_path"))),
             phase="stopped",
             error=None,
+            exit_code=None,
         )
         return status()
 
@@ -182,8 +249,6 @@ def configure(model_path, auto_start=True):
     config = load_config()
     config.setdefault("inference", {})["model_path"] = model_path
     config["inference"]["auto_start"] = bool(auto_start)
-    # Managed llama.cpp determines its actual model from model_path. Clear any
-    # legacy external-server model alias so all callers discover the loaded model.
     if config["inference"].get("backend") == "llama_cpp":
         config.setdefault("llm", {})["model"] = "auto"
     save_config(config)
@@ -200,4 +265,5 @@ def auto_start():
                 model_path=str(_resolve(cfg.get("model_path"))),
                 phase="failed",
                 error=str(exc),
+                exit_code=_process.poll() if _process is not None else None,
             )
