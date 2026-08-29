@@ -34,7 +34,8 @@
 - Create `tests/test_cloud_provider.py`: adapter/error-classification coverage.
 - Create `tests/test_cloud_router.py`: routing/failover/cooldown/tier-approval coverage.
 - Create `tests/test_cloud_server.py`: Live/Offline dispatch and status/approval integration.
-- Create `tests/test_cloud_gui_contract.py`: lightweight source/contract checks for task id, route display, and approval flow.
+- Create `tests/test_cloud_gui_contract.py`: lightweight source/contract checks for task id, route display, approval flow, and Cloud Model Pool UI.
+- Add `GET /ai/models` to expose grouped, secret-free model pool status for the GUI.
 
 ### Task 1: OpenAI-Compatible Cloud Provider Adapter
 
@@ -851,7 +852,124 @@ git add hcs_ai/gui.py tests/test_cloud_gui_contract.py
 git commit -m "feat: add cloud route status and tier approval UI"
 ```
 
-### Task 5: Update Packaging and End-to-End Configuration Validation
+
+### Task 5: Cloud Model Pool Inventory and GUI View
+
+**Files:**
+- Modify: `hcs_ai/cloud_router.py`
+- Modify: `hcs_ai/server.py`
+- Modify: `hcs_ai/gui.py`
+- Modify: `tests/test_cloud_router.py`
+- Modify: `tests/test_cloud_server.py`
+- Modify: `tests/test_cloud_gui_contract.py`
+
+**Interfaces:**
+- Produces: `cloud_router.model_inventory(task_id: str | None = None) -> dict`.
+- Adds: `GET /ai/models?task_id=<id>`.
+- Inventory groups identical model ids within capability tiers and returns provider-route state without secrets.
+- GUI adds a `Cloud Models` control/view showing tier, model, providers, healthy/configured count, credential-configured state, failover eligibility, and active-task marker.
+
+- [ ] **Step 1: Write failing inventory tests**
+
+Add router tests using deterministic routes and environment variables:
+
+```python
+def test_model_inventory_groups_same_model_across_providers(monkeypatch):
+    monkeypatch.setattr(cloud_router, "load_config", _cfg)
+    monkeypatch.setenv("A", "x")
+    monkeypatch.delenv("B", raising=False)
+    cloud_router.reset_runtime_state()
+    inventory = cloud_router.model_inventory("task-1")
+    high = next(t for t in inventory["tiers"] if t["tier"] == "high")
+    same = next(m for m in high["models"] if m["model"] == "same-model")
+    assert same["configured_routes"] == 2
+    assert {p["provider"] for p in same["providers"]} == {"p1", "p2"}
+    assert {p["credential_configured"] for p in same["providers"]} == {True, False}
+```
+
+Add server test:
+
+```python
+def test_ai_models_endpoint_is_secret_free(monkeypatch):
+    monkeypatch.setattr(
+        server.cloud_router,
+        "model_inventory",
+        lambda task_id=None: {
+            "tiers": [{"tier": "high", "models": [{"model": "m1", "providers": [{"provider": "p1", "credential_configured": True}]}]}]
+        },
+    )
+    response = client.get("/ai/models?task_id=t1")
+    assert response.status_code == 200
+    assert "api_key" not in response.text.lower()
+```
+
+Extend GUI contract test:
+
+```python
+def test_gui_has_cloud_model_pool_view():
+    assert '"/ai/models' in GUI
+    assert "Cloud Models" in GUI
+    assert "cloud_models" in GUI
+```
+
+- [ ] **Step 2: Run tests and verify RED**
+
+Run:
+
+```powershell
+python -m pytest -q tests/test_cloud_router.py tests/test_cloud_server.py tests/test_cloud_gui_contract.py
+```
+
+Expected: FAIL because model inventory and GUI view do not exist.
+
+- [ ] **Step 3: Implement secret-free model inventory**
+
+In `hcs_ai/cloud_router.py`, add `model_inventory(task_id=None)` that groups enabled routes by `tier` then `model`, reports each provider's route id, provider, healthy/cooldown state, and `credential_configured = bool(os.environ.get(api_key_env))`, plus model-level `configured_routes`, `healthy_routes`, `same_tier_failover_eligible`, and `active`.
+
+Never return `api_key_env` values or credential contents.
+
+- [ ] **Step 4: Expose inventory through the server**
+
+In `hcs_ai/server.py` add:
+
+```python
+@app.get("/ai/models")
+def ai_models(task_id: str | None = None):
+    return cloud_router.model_inventory(task_id)
+```
+
+- [ ] **Step 5: Add the Cloud Models GUI view**
+
+Add a `Cloud Models` button near the Live status. It opens a `Toplevel` containing a tree/list grouped by tier and model. Populate it from `GET /ai/models?task_id=<cloud_task_id>`.
+
+Each model row must show:
+- model id
+- tier
+- provider names
+- healthy/configured routes
+- failover eligibility
+- active marker
+
+Child/provider rows show provider name, route state, and `Key: Ready` or `Key: Missing`.
+
+- [ ] **Step 6: Run tests and verify GREEN**
+
+Run:
+
+```powershell
+python -m pytest -q tests/test_cloud_router.py tests/test_cloud_server.py tests/test_cloud_gui_contract.py
+```
+
+Expected: PASS.
+
+- [ ] **Step 7: Commit Task 5**
+
+```powershell
+git add hcs_ai/cloud_router.py hcs_ai/server.py hcs_ai/gui.py tests/test_cloud_router.py tests/test_cloud_server.py tests/test_cloud_gui_contract.py
+git commit -m "feat: add cloud model pool inventory"
+```
+
+### Task 6: Update Packaging and End-to-End Configuration Validation
 
 **Files:**
 - Modify: `update_manifest.json`
@@ -952,6 +1070,6 @@ After the implementation has passed automated tests and HCS has updated locally:
 
 ## Self-Review
 
-- **Spec coverage:** provider pooling, same-model preference, same-tier automatic substitution, weighted usage spreading, cooldowns, auth handling, cross-tier approval, route visibility, secret isolation, Offline preservation, logging/status, and tests are all mapped to tasks.
+- **Spec coverage:** provider pooling, same-model preference, same-tier automatic substitution, weighted usage spreading, cooldowns, auth handling, cross-tier approval, route visibility, Cloud Model Pool inventory/view, secret isolation, Offline preservation, logging/status, and tests are all mapped to tasks.
 - **Placeholder scan:** no TBD/TODO/“implement later” instructions remain.
 - **Type consistency:** router response keys and server/GUI consumers use the same `provider`, `model`, `tier`, `approval_required`, `current_tier`, and `proposed_tier` names.
