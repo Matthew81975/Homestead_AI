@@ -96,3 +96,16 @@ def test_approved_tier_change_allows_continuation(monkeypatch):
     result = cloud_router.chat("task-4", [{"role": "user", "content": "continue"}])
     assert result["tier"] == "medium"
     assert result["text"] == "continued"
+
+
+def test_model_inventory_groups_same_model_across_providers(monkeypatch):
+    monkeypatch.setattr(cloud_router, "load_config", _cfg)
+    monkeypatch.setenv("A", "x")
+    monkeypatch.delenv("B", raising=False)
+    cloud_router.reset_runtime_state()
+    inventory = cloud_router.model_inventory("task-1")
+    high = next(t for t in inventory["tiers"] if t["tier"] == "high")
+    same = next(m for m in high["models"] if m["model"] == "same-model")
+    assert same["configured_routes"] == 2
+    assert {p["provider"] for p in same["providers"]} == {"p1", "p2"}
+    assert {p["credential_configured"] for p in same["providers"]} == {True, False}
