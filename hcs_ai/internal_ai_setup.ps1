@@ -81,7 +81,7 @@ if (-not (Test-Path $serverExe)) {
             throw "The downloaded llama.cpp archive is unexpectedly small and was rejected."
         }
 
-        New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
+        $archiveInfo = Get-Item $zipPath\n        $archiveSha256 = (Get-FileHash -Algorithm SHA256 -Path $zipPath).Hash.ToLowerInvariant()\n        Write-Host "Archive SHA-256: $archiveSha256"\n\n        New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
         Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
 
         $server = Get-ChildItem $extractDir -Filter "llama-server.exe" -Recurse | Select-Object -First 1
@@ -89,7 +89,7 @@ if (-not (Test-Path $serverExe)) {
             throw "llama-server.exe was not found in the downloaded llama.cpp package."
         }
 
-        Copy-Item (Join-Path $server.Directory.FullName "*") $runtimeDir -Recurse -Force
+        Copy-Item (Join-Path $server.Directory.FullName "*") $runtimeDir -Recurse -Force\n\n        $serverSha256 = (Get-FileHash -Algorithm SHA256 -Path $serverExe).Hash.ToLowerInvariant()\n        $serverInfo = Get-Item $serverExe\n        Write-Host "llama-server.exe SHA-256: $serverSha256"\n\n        [ordered]@{\n            installed_at_utc = [DateTime]::UtcNow.ToString("o")\n            source_repository = "ggml-org/llama.cpp"\n            release_tag = $releaseTag\n            asset_name = $assetName\n            asset_url = $assetUrl\n            archive_sha256 = $archiveSha256\n            archive_bytes = $archiveInfo.Length\n            llama_server_sha256 = $serverSha256\n            llama_server_bytes = $serverInfo.Length\n            llama_server_path = $serverExe\n        } | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 -Path $provenancePath
     }
     finally {
         Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
