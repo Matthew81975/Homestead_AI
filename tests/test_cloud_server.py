@@ -6,6 +6,7 @@ client = TestClient(server.app)
 
 
 def test_offline_chat_keeps_local_path(monkeypatch):
+    monkeypatch.setattr(server, "audit", lambda *args, **kwargs: None)
     monkeypatch.setattr(server, "_ai_mode_status", lambda: {"effective_mode": "offline"})
     monkeypatch.setattr(server, "llm_chat", lambda message, history, use_kb: {"text": "local"})
     response = client.post("/chat", json={"message": "hi", "task_id": "t1"})
@@ -14,6 +15,7 @@ def test_offline_chat_keeps_local_path(monkeypatch):
 
 
 def test_live_chat_uses_cloud_router(monkeypatch):
+    monkeypatch.setattr(server, "audit", lambda *args, **kwargs: None)
     monkeypatch.setattr(server, "_ai_mode_status", lambda: {"effective_mode": "live"})
     monkeypatch.setattr(
         server.cloud_router,
