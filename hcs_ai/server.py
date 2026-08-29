@@ -216,6 +216,19 @@ def chat(inp: ChatIn):
         messages.extend(inp.history[-12:])
         messages.append({"role": "user", "content": inp.message})
         result = cloud_router.chat(inp.task_id, messages)
+        for event in result.get("route_events", []):
+            audit(
+                "cloud_route_event",
+                json.dumps({
+                    "task_id": inp.task_id,
+                    "route": event.get("route"),
+                    "provider": event.get("provider"),
+                    "model": event.get("model"),
+                    "tier": event.get("tier"),
+                    "outcome": event.get("outcome"),
+                    "reason": event.get("reason"),
+                }),
+            )
         audit(
             "cloud_route",
             json.dumps({
