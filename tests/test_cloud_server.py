@@ -44,3 +44,25 @@ def test_tier_approval_endpoint(monkeypatch):
     response = client.post("/ai/approve-tier", json={"task_id": "t3", "tier": "medium"})
     assert response.status_code == 200
     assert response.json()["tier"] == "medium"
+
+
+def test_ai_models_endpoint_is_secret_free(monkeypatch):
+    monkeypatch.setattr(
+        server.cloud_router,
+        "model_inventory",
+        lambda task_id=None: {
+            "tiers": [{
+                "tier": "high",
+                "models": [{
+                    "model": "m1",
+                    "providers": [{
+                        "provider": "p1",
+                        "credential_configured": True,
+                    }],
+                }],
+            }],
+        },
+    )
+    response = client.get("/ai/models?task_id=t1")
+    assert response.status_code == 200
+    assert "api_key" not in response.text.lower()
