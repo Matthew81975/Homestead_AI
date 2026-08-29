@@ -176,3 +176,24 @@ def test_chat_skips_route_with_missing_credential(monkeypatch):
     result = cloud_router.chat("task-key-filter", [{"role": "user", "content": "hi"}])
     assert result["provider"] == "p2"
     assert result["text"] == "usable"
+
+
+def test_failover_reports_each_route_event(monkeypatch):
+    _set_all_keys(monkeypatch)
+    monkeypatch.setattr(cloud_router, "load_config", _cfg)
+    monkeypatch.setattr(cloud_router, "provider_factory", FakeProvider)
+    cloud_router.reset_runtime_state()
+    FakeProvider.outcomes = {
+        "a": ProviderFailure("rate_limit", "limit"),
+        "b": "success",
+        "c": "unused",
+        "d": "unused",
+    }
+    result = cloud_router.chat("task-events", [{"role": "user", "content": "hello"}])
+    events = result["route_events"]
+    assert events[0]["provider"] == "p1"
+    assert events[0]["outcome"] == "failure"
+    assert events[0]["reason"] == "rate_limit"
+    assert events[1]["provider"] == "p2"
+    assert events[1]["outcome"] == "success"
+    assert "api_key_env" not in str(events)
