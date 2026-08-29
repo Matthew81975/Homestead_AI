@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import os
 import time
 
 from .config import load_config
@@ -95,6 +96,91 @@ def cloud_status() -> dict:
         "healthy_routes": len(healthy),
         "tiers": sorted({str(r.get("tier")) for r in routes if r.get("tier")}),
     }
+
+
+
+def model_inventory(task_id: str | None = None) -> dict:
+    routes = _routes()
+    now = time.monotonic()
+    state = _task_state.get(task_id or "", {})
+    active_tier = state.get("tier")
+    active_model = state.get("model")
+    active_provider = state.get("provider")
+
+    grouped = {}
+    for route in routes:
+        tier = str(route.get("tier") or "unassigned")
+        model = str(route.get("model") or "")
+        if not model:
+            continue
+        group = grouped.setdefault(
+            (tier, model),
+            {
+                "tier": tier,
+                "model": model,
+                "configured_routes": 0,
+                "healthy_routes": 0,
+                "providers": [],
+            },
+        )
+        healthy = _healthy(route, now)
+        group["configured_routes"] += 1
+        if healthy:
+            group["healthy_routes"] += 1
+        key_name = str(route.get("api_key_env") or "").strip()
+        credential_configured = bool(key_name and os.environ.get(key_name))
+        is_active = bool(
+            tier == active_tier
+            and model == active_model
+            and route.get("provider") == active_provider
+        )
+        cooldown_until = _cooldowns.get(route["id"], 0.0)
+        if cooldown_until == float("inf"):
+            route_state = "unavailable"
+            cooldown_remaining = None
+        elif healthy:
+            route_state = "active" if is_active else "ready"
+            cooldown_remaining = 0.0
+        else:
+            route_state = "cooldown"
+            cooldown_remaining = max(0.0, cooldown_until - now)
+        group["providers"].append({
+            "route_id": route["id"],
+            "provider": route.get("provider") or route["id"],
+            "state": route_state,
+            "healthy": healthy,
+            "credential_configured": credential_configured,
+            "active": is_active,
+            "cooldown_remaining_seconds": cooldown_remaining,
+        })
+
+    tier_names = sorted({tier for tier, _model in grouped})
+    tiers = []
+    for tier in tier_names:
+        models = []
+        healthy_in_tier = sum(
+            item["healthy_routes"]
+            for (item_tier, _model), item in grouped.items()
+            if item_tier == tier
+        )
+        for (item_tier, _model), item in sorted(grouped.items()):
+            if item_tier != tier:
+                continue
+            item["same_tier_failover_eligible"] = healthy_in_tier > 1
+            item["active"] = bool(
+                item["tier"] == active_tier and item["model"] == active_model
+            )
+            models.append(item)
+        tiers.append({"tier": tier, "models": models})
+
+    return {
+        "task_id": task_id,
+        "active_tier": active_tier,
+        "active_model": active_model,
+        "active_provider": active_provider,
+        "tiers": tiers,
+    }
+
 
 
 def chat(task_id: str, messages: list[dict], tools: list[dict] | None = None) -> dict:
