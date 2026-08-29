@@ -143,6 +143,26 @@ When the router returns `approval_required`, Alexandria presents the proposed mo
 
 A provider-management UI can be added incrementally; the first implementation may use local configuration plus clear status display if that keeps the initial change tractable.
 
+
+## Cloud Model Pool view
+
+HCS must expose a user-visible Cloud Model Pool view that groups routes by model and capability tier so the user can see what the router can use before or during a task.
+
+For each model group, show:
+
+- model name
+- capability tier
+- providers that offer that model
+- healthy route count versus configured route count
+- active/cooldown/unavailable state
+- whether each provider route has its credential environment variable configured
+- whether the model is currently eligible for automatic same-tier failover
+- whether the model is the active model for the current Alexandria task
+
+Identical model ids are grouped together across providers. Different models that share a capability tier appear together under that tier but remain distinct model entries.
+
+The view is informational in the initial implementation. Manual enable/disable controls and tier overrides may be added later; routing still uses explicit configuration metadata.
+
 ## Error handling
 
 Automatic failover is allowed for:
@@ -183,6 +203,7 @@ Tests should cover:
 9. offline mode remains unchanged.
 10. provider/model/tier information appears in normalized chat responses and status.
 11. secrets are not included in logs/status responses.
+12. the Cloud Model Pool view groups identical models and reports provider/health/credential/active-route state.
 
 ## Initial implementation boundary
 
