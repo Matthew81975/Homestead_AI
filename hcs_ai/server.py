@@ -13,6 +13,7 @@ from .tools import public_tool_specs, call_tool
 from . import hkr
 from .ports import choose_port, save_selected_port
 from . import engine
+from . import cloud_router
 
 app = FastAPI(title="HCS-AI", version="0.7.1")
 
@@ -20,6 +21,7 @@ class ChatIn(BaseModel):
     message: str
     history: list[dict] = Field(default_factory=list)
     use_kb: bool = True
+    task_id: str = "alexandria-default"
 
 class MemoryIn(BaseModel):
     key: str
@@ -79,6 +81,11 @@ class InferenceConfigIn(BaseModel):
 class AIModeIn(BaseModel):
     mode: str
 
+
+class TierApprovalIn(BaseModel):
+    task_id: str
+    tier: str
+
 @app.on_event("startup")
 def startup():
     init_db()
@@ -123,19 +130,37 @@ def _ai_mode_status():
     cfg = load_config()
     selected = str(cfg.get("ai", {}).get("mode") or "offline").lower()
     cloud = cfg.get("cloud_ai", {})
-    url = str(cloud.get("base_url") or "https://api.openai.com/v1").rstrip("/") + "/models"
+    routes = [
+        route for route in cloud.get("routes", [])
+        if route.get("enabled", True)
+    ]
+    probe_base = (
+        str(routes[0].get("base_url") or "").rstrip("/")
+        if routes else "https://api.openai.com/v1"
+    )
+    url = probe_base + "/models"
     timeout = float(cfg.get("ai", {}).get("connectivity_timeout_seconds", 2.0))
     internet = False
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "HCS-AI/0.10"}, method="GET")
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "HCS-AI/0.10"},
+            method="GET",
+        )
         with urllib.request.urlopen(req, timeout=timeout):
             internet = True
     except urllib.error.HTTPError:
         internet = True
     except Exception:
         internet = False
-    cloud_configured = bool(cloud.get("enabled") and str(cloud.get("model") or "").strip())
-    live_available = bool(internet and cloud_configured)
+
+    pool = cloud_router.cloud_status()
+    cloud_configured = bool(
+        pool.get("enabled") and pool.get("configured_routes", 0) > 0
+    )
+    live_available = bool(
+        internet and cloud_configured and pool.get("healthy_routes", 0) > 0
+    )
     effective = "live" if selected == "live" and live_available else "offline"
     return {
         "selected_mode": selected,
@@ -143,8 +168,9 @@ def _ai_mode_status():
         "internet_available": internet,
         "cloud_configured": cloud_configured,
         "live_available": live_available,
-        "cloud_provider": cloud.get("provider") or "cloud",
-        "cloud_model": cloud.get("model") or "",
+        "cloud_provider": "",
+        "cloud_model": "",
+        "cloud_pool": pool,
     }
 
 @app.get("/ai/status")
@@ -167,13 +193,38 @@ def ai_set_mode(inp: AIModeIn):
     audit("ai_mode", mode)
     return _ai_mode_status()
 
+@app.post("/ai/approve-tier")
+def ai_approve_tier(inp: TierApprovalIn):
+    return cloud_router.approve_tier_change(inp.task_id, inp.tier)
+
+
 @app.post("/chat")
 def chat(inp: ChatIn):
     try:
         audit("chat", inp.message[:1000])
-        return llm_chat(inp.message, inp.history, inp.use_kb)
+        status = _ai_mode_status()
+        if status["effective_mode"] != "live":
+            return llm_chat(inp.message, inp.history, inp.use_kb)
+
+        cfg = load_config()
+        messages = [{"role": "system", "content": cfg["app"]["system_prompt"]}]
+        messages.extend(inp.history[-12:])
+        messages.append({"role": "user", "content": inp.message})
+        result = cloud_router.chat(inp.task_id, messages)
+        audit(
+            "cloud_route",
+            json.dumps({
+                "task_id": inp.task_id,
+                "provider": result.get("provider"),
+                "model": result.get("model"),
+                "tier": result.get("tier") or result.get("current_tier"),
+                "approval_required": bool(result.get("approval_required")),
+            }),
+        )
+        return result
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"LLM request failed: {e}")
+
 
 @app.get("/memory")
 def memory_list(limit: int = 100):
