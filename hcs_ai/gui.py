@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import threading
+import uuid
 from pathlib import Path
 from .config import ROOT
 from .ports import port_candidates, saved_endpoint
@@ -58,6 +59,8 @@ class App(tk.Tk):
         self.history = []
         self._thinking = False
         self._thinking_frame = 0
+        self.cloud_task_id = "alexandria-" + uuid.uuid4().hex
+        self._pending_cloud_request = None
         self._install_clipboard_bindings()
 
         # Main workspace: persistent tabbed tools above, Alexandria console below.
@@ -229,6 +232,8 @@ class App(tk.Tk):
             header, text="Internet: checking... | Cloud AI: checking..."
         )
         self.live_availability.pack(side="left", padx=(2, 8))
+        self.cloud_route_label = ttk.Label(header, text="Cloud: —")
+        self.cloud_route_label.pack(side="left", padx=(4, 8))
         self.thinking_label = ttk.Label(header, text="")
         self.thinking_label.pack(side="left", padx=(4, 8))
         self.git_update_label = ttk.Label(header, text="Git: checking...")
@@ -280,6 +285,15 @@ class App(tk.Tk):
         self.live_availability.config(
             text=f"Internet: {internet_text} | Cloud AI: {cloud_text} | AI: {source}"
         )
+        if effective != "live":
+            self.cloud_route_label.config(text="Cloud: —")
+        elif not self.cloud_route_label.cget("text").startswith("Cloud: ") or self.cloud_route_label.cget("text") == "Cloud: —":
+            pool = out.get("cloud_pool") or {}
+            healthy = pool.get("healthy_routes", 0)
+            configured = pool.get("configured_routes", 0)
+            self.cloud_route_label.config(
+                text=f"Cloud: ready | {healthy}/{configured} routes"
+            )
 
     def _refresh_ai_mode_status(self):
         try:
@@ -345,38 +359,96 @@ class App(tk.Tk):
         msg = self.prompt.get().strip()
         if not msg or self._thinking:
             return
-        history = list(self.history[-12:])
-        use_kb = bool(self.use_kb.get())
+        payload = {
+            "message": msg,
+            "history": list(self.history[-12:]),
+            "use_kb": bool(self.use_kb.get()),
+            "task_id": self.cloud_task_id,
+        }
+        self._pending_cloud_request = payload
         self.prompt.delete(0, "end")
         self.append_chat("You", msg)
         self._set_thinking(True)
+        self._dispatch_chat_payload(payload)
 
+    def _dispatch_chat_payload(self, payload):
         def work():
             try:
-                out = api("POST", "/chat", {
-                    "message": msg,
-                    "history": history,
-                    "use_kb": use_kb,
-                })
-                self.after(0, lambda o=out, m=msg: self._chat_done(m, o))
+                out = api("POST", "/chat", payload)
+                self.after(
+                    0,
+                    lambda o=out, m=payload["message"]: self._chat_done(m, o),
+                )
             except Exception as exc:
                 self.after(0, lambda m=str(exc): self._chat_failed(m))
 
         threading.Thread(target=work, daemon=True).start()
 
+    def _retry_pending_cloud_request(self):
+        payload = self._pending_cloud_request
+        if not payload:
+            return
+        self._set_thinking(True)
+        self._dispatch_chat_payload(payload)
+
     def _chat_done(self, msg, out):
+        if out.get("approval_required"):
+            self._set_thinking(False)
+            approved = messagebox.askyesno(
+                "Cloud model change",
+                out.get("message") or (
+                    f"Continue by changing capability tier from "
+                    f"{out.get('current_tier')} to {out.get('proposed_tier')}?"
+                ),
+            )
+            if approved:
+                try:
+                    api(
+                        "POST",
+                        "/ai/approve-tier",
+                        {
+                            "task_id": self.cloud_task_id,
+                            "tier": out["proposed_tier"],
+                        },
+                        timeout=10,
+                    )
+                except Exception as exc:
+                    self._pending_cloud_request = None
+                    self.append_chat("Error", str(exc))
+                    return
+                self._retry_pending_cloud_request()
+            else:
+                self._pending_cloud_request = None
+                self.append_chat(
+                    "HCS-AI",
+                    "Cloud task paused. Model caliber was not changed.",
+                )
+            return
+
         self._set_thinking(False)
+        if out.get("provider") and out.get("model"):
+            self.cloud_route_label.config(
+                text=(
+                    f"Cloud: {out.get('tier', '?')} | "
+                    f"{out['provider']} | {out['model']}"
+                )
+            )
         text = out.get("text", "")
         self.append_chat("HCS-AI", text)
         self.history += [
             {"role": "user", "content": msg},
             {"role": "assistant", "content": text},
         ]
+        self._pending_cloud_request = None
         if out.get("tool_results"):
-            self.append_chat("Tools", json.dumps(out["tool_results"], indent=2)[:5000])
+            self.append_chat(
+                "Tools",
+                json.dumps(out["tool_results"], indent=2)[:5000],
+            )
 
     def _chat_failed(self, message):
         self._set_thinking(False)
+        self._pending_cloud_request = None
         self.append_chat("Error", message)
 
     def _refresh_git_update_status(self):
