@@ -3,8 +3,11 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, simpledialog
 import urllib.request, urllib.parse
 import os
+import re
 import subprocess
+import threading
 from pathlib import Path
+from .config import ROOT
 from .ports import port_candidates, saved_endpoint
 
 BASE = None
@@ -53,6 +56,9 @@ class App(tk.Tk):
         self.title("HCS-AI v0.7.1 — Self-Contained Local AI")
         self.geometry("1050x720")
         self.history = []
+        self._thinking = False
+        self._thinking_frame = 0
+        self._install_clipboard_bindings()
 
         # Main workspace: persistent tabbed tools above, Alexandria console below.
         # The AI is the command interface to HCS, not a destination tab.
@@ -77,6 +83,120 @@ class App(tk.Tk):
         self.build_kb(); self.build_hkr(); self.build_external(); self.build_memory(); self.build_mcp(); self.build_system()
         self.after(80, self._set_ai_console_normal)
         self.after(300, self.check_server)
+        self.after(1200, self._refresh_git_update_status)
+
+    def _install_clipboard_bindings(self):
+        # Shared clipboard behavior for HCS text controls. This includes
+        # read-only/disabled Text widgets, which Tk does not handle consistently.
+        for widget_class in ("Text", "Entry", "TEntry", "Spinbox", "TSpinbox"):
+            self.bind_class(widget_class, "<Control-c>", self._clipboard_copy, add="+")
+            self.bind_class(widget_class, "<Control-C>", self._clipboard_copy, add="+")
+            self.bind_class(widget_class, "<Control-a>", self._clipboard_select_all, add="+")
+            self.bind_class(widget_class, "<Control-A>", self._clipboard_select_all, add="+")
+            self.bind_class(widget_class, "<Button-3>", self._show_clipboard_menu, add="+")
+        for widget_class in ("Text", "Entry", "TEntry", "Spinbox", "TSpinbox"):
+            self.bind_class(widget_class, "<Control-x>", self._clipboard_cut, add="+")
+            self.bind_class(widget_class, "<Control-X>", self._clipboard_cut, add="+")
+            self.bind_class(widget_class, "<Control-v>", self._clipboard_paste, add="+")
+            self.bind_class(widget_class, "<Control-V>", self._clipboard_paste, add="+")
+
+    def _widget_editable(self, widget):
+        try:
+            return str(widget.cget("state")) not in ("disabled", "readonly")
+        except Exception:
+            return True
+
+    def _selected_text(self, widget):
+        try:
+            if isinstance(widget, tk.Text):
+                return widget.get("sel.first", "sel.last")
+            return widget.selection_get()
+        except Exception:
+            return ""
+
+    def _clipboard_copy(self, event):
+        text = self._selected_text(event.widget)
+        if text:
+            self.clipboard_clear()
+            self.clipboard_append(text)
+            self.update_idletasks()
+        return "break"
+
+    def _clipboard_cut(self, event):
+        widget = event.widget
+        if not self._widget_editable(widget):
+            return self._clipboard_copy(event)
+        text = self._selected_text(widget)
+        if not text:
+            return "break"
+        self.clipboard_clear()
+        self.clipboard_append(text)
+        try:
+            if isinstance(widget, tk.Text):
+                widget.delete("sel.first", "sel.last")
+            else:
+                first, last = widget.index("sel.first"), widget.index("sel.last")
+                widget.delete(first, last)
+        except Exception:
+            pass
+        return "break"
+
+    def _clipboard_paste(self, event):
+        widget = event.widget
+        if not self._widget_editable(widget):
+            return "break"
+        try:
+            text = self.clipboard_get()
+        except tk.TclError:
+            return "break"
+        try:
+            if isinstance(widget, tk.Text):
+                try:
+                    widget.delete("sel.first", "sel.last")
+                except tk.TclError:
+                    pass
+                widget.insert("insert", text)
+            else:
+                try:
+                    first, last = widget.index("sel.first"), widget.index("sel.last")
+                    widget.delete(first, last)
+                except Exception:
+                    pass
+                widget.insert("insert", text)
+        except Exception:
+            pass
+        return "break"
+
+    def _clipboard_select_all(self, event):
+        widget = event.widget
+        try:
+            if isinstance(widget, tk.Text):
+                widget.tag_add("sel", "1.0", "end-1c")
+                widget.mark_set("insert", "1.0")
+                widget.see("insert")
+            else:
+                widget.selection_range(0, "end")
+                widget.icursor("end")
+        except Exception:
+            pass
+        return "break"
+
+    def _show_clipboard_menu(self, event):
+        widget = event.widget
+        menu = tk.Menu(self, tearoff=0)
+        menu.add_command(label="Copy", command=lambda: self._clipboard_copy(type("E", (), {"widget": widget})()))
+        editable = self._widget_editable(widget)
+        menu.add_command(label="Cut", state="normal" if editable else "disabled",
+                         command=lambda: self._clipboard_cut(type("E", (), {"widget": widget})()))
+        menu.add_command(label="Paste", state="normal" if editable else "disabled",
+                         command=lambda: self._clipboard_paste(type("E", (), {"widget": widget})()))
+        menu.add_separator()
+        menu.add_command(label="Select All", command=lambda: self._clipboard_select_all(type("E", (), {"widget": widget})()))
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+        return "break"
 
     def check_server(self):
         global BASE
@@ -109,6 +229,10 @@ class App(tk.Tk):
             header, text="Internet: checking... | Cloud AI: checking..."
         )
         self.live_availability.pack(side="left", padx=(2, 8))
+        self.thinking_label = ttk.Label(header, text="")
+        self.thinking_label.pack(side="left", padx=(4, 8))
+        self.git_update_label = ttk.Label(header, text="Git: checking...")
+        self.git_update_label.pack(side="right", padx=(8, 8))
         ttk.Button(header, text="Expand", command=self._expand_ai_console).pack(side="right")
         ttk.Button(header, text="Normal", command=self._set_ai_console_normal).pack(side="right", padx=4)
         ttk.Button(header, text="Collapse", command=self._collapse_ai_console).pack(side="right")
@@ -124,7 +248,8 @@ class App(tk.Tk):
         row = ttk.Frame(self.chat_tab); row.pack(fill="x", padx=8, pady=(0,6))
         self.prompt = ttk.Entry(row); self.prompt.pack(side="left", fill="x", expand=True)
         self.prompt.bind("<Return>", lambda e: self.send())
-        ttk.Button(row, text="Send", command=self.send).pack(side="left", padx=(8,0))
+        self.send_button = ttk.Button(row, text="Send", command=self.send)
+        self.send_button.pack(side="left", padx=(8,0))
         self.use_kb = tk.BooleanVar(value=True)
         ttk.Checkbutton(row, text="Use KB", variable=self.use_kb).pack(side="left", padx=8)
         self.status = ttk.Label(self.chat_tab, text="Checking server...")
@@ -195,18 +320,105 @@ class App(tk.Tk):
         self.chat_box.insert("end", f"{who}:\n{text}\n\n")
         self.chat_box.see("end"); self.chat_box.config(state="disabled")
 
+    def _set_thinking(self, active):
+        self._thinking = bool(active)
+        self._thinking_frame = 0
+        if active:
+            self.send_button.configure(state="disabled")
+            self.prompt.configure(state="disabled")
+            self._animate_thinking()
+        else:
+            self.thinking_label.config(text="")
+            self.send_button.configure(state="normal")
+            self.prompt.configure(state="normal")
+            self.prompt.focus_set()
+
+    def _animate_thinking(self):
+        if not self._thinking:
+            return
+        frames = ("Thinking ·", "Thinking ··", "Thinking ···")
+        self.thinking_label.config(text=frames[self._thinking_frame % len(frames)])
+        self._thinking_frame += 1
+        self.after(320, self._animate_thinking)
+
     def send(self):
         msg = self.prompt.get().strip()
-        if not msg: return
-        self.prompt.delete(0, "end"); self.append_chat("You", msg); self.update()
-        try:
-            out = api("POST", "/chat", {"message":msg,"history":self.history[-12:],"use_kb":self.use_kb.get()})
-            text = out.get("text",""); self.append_chat("HCS-AI", text)
-            self.history += [{"role":"user","content":msg},{"role":"assistant","content":text}]
-            if out.get("tool_results"):
-                self.append_chat("Tools", json.dumps(out["tool_results"], indent=2)[:5000])
-        except Exception as e:
-            self.append_chat("Error", str(e))
+        if not msg or self._thinking:
+            return
+        history = list(self.history[-12:])
+        use_kb = bool(self.use_kb.get())
+        self.prompt.delete(0, "end")
+        self.append_chat("You", msg)
+        self._set_thinking(True)
+
+        def work():
+            try:
+                out = api("POST", "/chat", {
+                    "message": msg,
+                    "history": history,
+                    "use_kb": use_kb,
+                })
+                self.after(0, lambda o=out, m=msg: self._chat_done(m, o))
+            except Exception as exc:
+                self.after(0, lambda m=str(exc): self._chat_failed(m))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _chat_done(self, msg, out):
+        self._set_thinking(False)
+        text = out.get("text", "")
+        self.append_chat("HCS-AI", text)
+        self.history += [
+            {"role": "user", "content": msg},
+            {"role": "assistant", "content": text},
+        ]
+        if out.get("tool_results"):
+            self.append_chat("Tools", json.dumps(out["tool_results"], indent=2)[:5000])
+
+    def _chat_failed(self, message):
+        self._set_thinking(False)
+        self.append_chat("Error", message)
+
+    def _refresh_git_update_status(self):
+        if not hasattr(self, "git_update_label"):
+            return
+        self.git_update_label.config(text="Git: checking...")
+
+        def work():
+            state_path = ROOT / ".hcs-update" / "state.json"
+            installed = None
+            try:
+                state = json.loads(state_path.read_text(encoding="utf-8"))
+                installed = str(state.get("installed_sha") or "").lower() or None
+            except Exception:
+                pass
+
+            latest = None
+            try:
+                req = urllib.request.Request(
+                    "https://github.com/Matthew81975/Homestead_AI/commits/main.atom",
+                    headers={"User-Agent": "HCS-AI-Update-Indicator"},
+                )
+                with urllib.request.urlopen(req, timeout=12) as response:
+                    feed = response.read().decode("utf-8", errors="replace")
+                match = re.search(r"/commit/([0-9a-fA-F]{40})", feed)
+                if not match:
+                    match = re.search(r"([0-9a-fA-F]{40})", feed)
+                if match:
+                    latest = match.group(1).lower()
+            except Exception:
+                pass
+
+            if latest and installed:
+                result = "Git: current" if latest == installed else "Git: update available"
+            elif latest:
+                result = "Git: update status unknown"
+            else:
+                result = "Git: offline/unavailable"
+            self.after(0, lambda value=result: self.git_update_label.config(text=value))
+
+        threading.Thread(target=work, daemon=True).start()
+        self.after(600000, self._refresh_git_update_status)
 
     def build_kb(self):
         top = ttk.Frame(self.kb_tab); top.pack(fill="x", padx=8, pady=8)
