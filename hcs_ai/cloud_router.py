@@ -219,6 +219,7 @@ def chat(task_id: str, messages: list[dict], tools: list[dict] | None = None) ->
     now = time.monotonic()
     cooldown_default = float(cfg.get("cooldown_seconds", 60))
     errors = []
+    route_events = []
 
     for route in _ordered_candidates(routes, tier, current_model, now):
         try:
@@ -228,16 +229,33 @@ def chat(task_id: str, messages: list[dict], tools: list[dict] | None = None) ->
                 "provider": route["provider"],
                 "model": route["model"],
             })
+            route_events.append({
+                "route": route["id"],
+                "provider": route["provider"],
+                "model": route["model"],
+                "tier": route["tier"],
+                "outcome": "success",
+                "reason": "completed",
+            })
             return {
                 **result,
                 "tier": route["tier"],
                 "approval_required": False,
+                "route_events": route_events,
             }
         except ProviderFailure as exc:
             errors.append({
                 "route": route["id"],
                 "kind": exc.kind,
                 "message": str(exc),
+            })
+            route_events.append({
+                "route": route["id"],
+                "provider": route["provider"],
+                "model": route["model"],
+                "tier": route["tier"],
+                "outcome": "failure",
+                "reason": exc.kind,
             })
             if exc.kind == "auth":
                 _cooldowns[route["id"]] = float("inf")
@@ -265,6 +283,7 @@ def chat(task_id: str, messages: list[dict], tools: list[dict] | None = None) ->
                 f"{replacement['tier']} tier?"
             ),
             "errors": errors,
+            "route_events": route_events,
         }
 
     raise RuntimeError("No healthy cloud AI route is currently available.")
