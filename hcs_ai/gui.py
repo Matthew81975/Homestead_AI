@@ -232,6 +232,11 @@ class App(tk.Tk):
             header, text="Internet: checking... | Cloud AI: checking..."
         )
         self.live_availability.pack(side="left", padx=(2, 8))
+        ttk.Button(
+            header,
+            text="Cloud Models",
+            command=self.show_cloud_models,
+        ).pack(side="left", padx=(2, 8))
         self.cloud_route_label = ttk.Label(header, text="Cloud: —")
         self.cloud_route_label.pack(side="left", padx=(4, 8))
         self.thinking_label = ttk.Label(header, text="")
@@ -260,6 +265,117 @@ class App(tk.Tk):
         self.status = ttk.Label(self.chat_tab, text="Checking server...")
         self.after(1500, self._refresh_ai_mode_status)
         self.status.pack(anchor="w", padx=8, pady=(0,6))
+
+    def show_cloud_models(self):
+        window = tk.Toplevel(self)
+        window.title("Cloud Model Pool")
+        window.geometry("900x480")
+
+        ttk.Label(
+            window,
+            text="Cloud Model Pool — models grouped by capability tier and provider",
+        ).pack(anchor="w", padx=10, pady=(10, 4))
+
+        frame = ttk.Frame(window)
+        frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        columns = ("providers", "routes", "failover", "state")
+        tree = ttk.Treeview(frame, columns=columns, show="tree headings")
+        self.cloud_models_tree = tree
+        tree.heading("#0", text="Tier / Model / Provider")
+        tree.heading("providers", text="Providers")
+        tree.heading("routes", text="Healthy / Configured")
+        tree.heading("failover", text="Auto failover")
+        tree.heading("state", text="State / Credential")
+        tree.column("#0", width=280, stretch=True)
+        tree.column("providers", width=190, stretch=True)
+        tree.column("routes", width=120, anchor="center")
+        tree.column("failover", width=110, anchor="center")
+        tree.column("state", width=170, stretch=True)
+        scroll = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=scroll.set)
+        tree.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="right", fill="y")
+        loading = tree.insert("", "end", text="Loading cloud models...")
+
+        def work():
+            try:
+                out = api(
+                    "GET",
+                    "/ai/models?task_id=" + urllib.parse.quote(self.cloud_task_id),
+                    timeout=12,
+                )
+                self.after(
+                    0,
+                    lambda data=out, t=tree: self._populate_cloud_models(t, data),
+                )
+            except Exception as exc:
+                self.after(
+                    0,
+                    lambda message=str(exc), t=tree, item=loading: (
+                        t.item(item, text="Unable to load cloud models"),
+                        t.set(item, "state", message),
+                    ),
+                )
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _populate_cloud_models(self, tree, data):
+        for item in tree.get_children():
+            tree.delete(item)
+
+        for tier_info in data.get("tiers", []):
+            tier_name = str(tier_info.get("tier") or "unassigned")
+            tier_item = tree.insert(
+                "",
+                "end",
+                text=tier_name.upper(),
+                open=True,
+            )
+            for model_info in tier_info.get("models", []):
+                providers = model_info.get("providers", [])
+                provider_names = ", ".join(
+                    str(p.get("provider") or "")
+                    for p in providers
+                    if p.get("provider")
+                )
+                active = bool(model_info.get("active"))
+                model_name = str(model_info.get("model") or "")
+                display_name = ("★ " if active else "") + model_name
+                healthy = int(model_info.get("healthy_routes", 0))
+                configured = int(model_info.get("configured_routes", 0))
+                model_state = "Active" if active else (
+                    "Ready" if healthy else "Unavailable"
+                )
+                model_item = tree.insert(
+                    tier_item,
+                    "end",
+                    text=display_name,
+                    values=(
+                        provider_names,
+                        f"{healthy} / {configured}",
+                        "Yes" if model_info.get("same_tier_failover_eligible") else "No",
+                        model_state,
+                    ),
+                    open=active,
+                )
+                for provider in providers:
+                    key_state = (
+                        "Key: Ready"
+                        if provider.get("credential_configured")
+                        else "Key: Missing"
+                    )
+                    route_state = str(provider.get("state") or "unknown").title()
+                    tree.insert(
+                        model_item,
+                        "end",
+                        text=str(provider.get("provider") or "provider"),
+                        values=(
+                            "",
+                            "1 / 1" if provider.get("healthy") else "0 / 1",
+                            "",
+                            f"{route_state} | {key_state}",
+                        ),
+                    )
 
     def _set_ai_mode(self, mode: str):
         previous = getattr(self, "_last_ai_mode", "offline")
