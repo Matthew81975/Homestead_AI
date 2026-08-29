@@ -727,34 +727,56 @@ class App(tk.Tk):
         except Exception as e: messagebox.showerror("Internal AI",str(e))
 
     def launch_internal_setup(self):
-        script=Path(__file__).resolve().parent / "internal_ai_setup.ps1"
-        if not script.is_file():
-            messagebox.showerror(
-                "Internal AI Setup",
-                f"Setup script was not found:\n{script}\n\n"
-                "The installed maintenance files need to be repaired."
-            )
-            return
         try:
-            flags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
-            subprocess.Popen(
-                [
-                    "powershell.exe",
-                    "-NoExit",
-                    "-NoProfile",
-                    "-ExecutionPolicy", "Bypass",
-                    "-File", str(script),
-                ],
-                cwd=str(script.parent),
-                creationflags=flags,
-            )
+            from .internal_ai_setup import existing_runtime_info, install_runtime
+            existing = existing_runtime_info()
+            if existing:
+                sha = existing.get("llama_server_sha256", "unknown")
+                messagebox.showinfo(
+                    "Internal AI Setup",
+                    "llama.cpp runtime is already installed.\n\n"
+                    f"SHA-256: {sha}\n\n"
+                    "If antivirus quarantined llama-server.exe, restore only that file "
+                    "after verifying this hash/provenance, then click Refresh."
+                )
+                return
+
+            import threading
+
+            def work():
+                try:
+                    record = install_runtime()
+                    self.after(0, lambda r=record: self._internal_ai_setup_done(r))
+                except Exception as exc:
+                    self.after(
+                        0,
+                        lambda m=str(exc): messagebox.showerror("Internal AI Setup", m),
+                    )
+
             messagebox.showinfo(
                 "Internal AI Setup",
-                "A visible PowerShell setup window has been opened. "
-                "It will stay open so any setup error can be read."
+                "HCS will download and install the official llama.cpp Windows CPU runtime. "
+                "The installer now runs inside HCS instead of PowerShell."
             )
+            threading.Thread(target=work, daemon=True).start()
         except Exception as e:
             messagebox.showerror("Internal AI Setup", str(e))
+
+    def _internal_ai_setup_done(self, record):
+        sha = record.get("llama_server_sha256", "unknown")
+        tag = record.get("release_tag", "unknown")
+        asset = record.get("asset_name", "unknown")
+        messagebox.showinfo(
+            "Internal AI Setup",
+            "Internal AI runtime installed successfully.\n\n"
+            f"Release: {tag}\n"
+            f"Asset: {asset}\n"
+            f"llama-server.exe SHA-256:\n{sha}\n\n"
+            "If antivirus flags llama-server.exe, do not disable antivirus globally. "
+            "Verify this provenance, restore only the executable, and use the narrowest "
+            "runtime-folder exception needed. Then click Refresh and Start."
+        )
+        self.refresh_inference()
 
     def call_sys(self,name,args):
         try:
