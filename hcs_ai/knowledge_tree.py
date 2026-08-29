@@ -94,7 +94,6 @@ def _resolve_model(client: httpx.Client, cfg: dict) -> str:
 
 
 def analyze_for_tree(*, title: str, artifact_type: str, text: str, metadata: dict | None = None) -> dict:
-    cfg = llm_config()
     tree = _existing_tree_snapshot()
     prompt = f"""You are the taxonomy classifier for HCS. Analyze the supplied knowledge artifact and place it in a hierarchical knowledge taxonomy.
 
