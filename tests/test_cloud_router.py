@@ -109,3 +109,30 @@ def test_model_inventory_groups_same_model_across_providers(monkeypatch):
     assert same["configured_routes"] == 2
     assert {p["provider"] for p in same["providers"]} == {"p1", "p2"}
     assert {p["credential_configured"] for p in same["providers"]} == {True, False}
+
+
+def test_update_manifest_ships_cloud_modules():
+    import json
+    from pathlib import Path
+
+    manifest = json.loads(Path("update_manifest.json").read_text(encoding="utf-8"))
+    assert "hcs_ai/cloud_provider.py" in manifest["files"]
+    assert "hcs_ai/cloud_router.py" in manifest["files"]
+
+
+def test_default_config_contains_no_api_secret():
+    from pathlib import Path
+
+    text = Path("config.default.json").read_text(encoding="utf-8").lower()
+    assert "sk-" not in text
+    assert '"api_key":' not in text
+
+
+def test_model_inventory_never_returns_secret_value(monkeypatch):
+    import json
+
+    monkeypatch.setattr(cloud_router, "load_config", _cfg)
+    monkeypatch.setenv("A", "DO_NOT_LEAK_ME")
+    cloud_router.reset_runtime_state()
+    payload = json.dumps(cloud_router.model_inventory("task-secret"))
+    assert "DO_NOT_LEAK_ME" not in payload
