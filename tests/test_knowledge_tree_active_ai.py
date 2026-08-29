@@ -14,6 +14,7 @@ def _analysis_json():
 
 
 def test_live_mode_uses_cloud_router_for_tree_classification(monkeypatch):
+    monkeypatch.setattr(knowledge_tree, "_existing_tree_snapshot", lambda: [])
     monkeypatch.setattr(
         knowledge_tree,
         "load_config",
@@ -52,6 +53,7 @@ def test_live_mode_uses_cloud_router_for_tree_classification(monkeypatch):
 
 
 def test_live_tree_classification_stops_when_router_requires_tier_approval(monkeypatch):
+    monkeypatch.setattr(knowledge_tree, "_existing_tree_snapshot", lambda: [])
     monkeypatch.setattr(
         knowledge_tree,
         "load_config",
