@@ -14,6 +14,8 @@ def test_default_config_includes_openrouter_route_without_secret():
     cloud = _cloud_defaults()
     route = next(r for r in cloud["routes"] if r["provider"] == "openrouter")
 
+    assert cloud["enabled"] is True
+    assert route["enabled"] is True
     assert route["base_url"] == "https://openrouter.ai/api/v1"
     assert route["api_key_env"] == "OPENROUTER_API_KEY"
     assert route["model"] == "openrouter/free"
