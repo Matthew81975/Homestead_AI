@@ -43,9 +43,21 @@
     "connectivity_timeout_seconds": 2
   },
   "cloud_ai": {
-    "enabled": false,
+    "enabled": true,
     "default_tier": "high",
     "cooldown_seconds": 60,
-    "routes": []
+    "routes": [
+      {
+        "id": "openrouter-free",
+        "provider": "openrouter",
+        "base_url": "https://openrouter.ai/api/v1",
+        "api_key_env": "OPENROUTER_API_KEY",
+        "model": "openrouter/free",
+        "tier": "high",
+        "enabled": true,
+        "weight": 1,
+        "timeout_seconds": 120
+      }
+    ]
   }
 }
