@@ -9,7 +9,7 @@ from hcs_ai import config, speech
 
 class SpeechHelpersTests(unittest.TestCase):
     def test_clean_for_speech_removes_chat_markdown(self):
-        text = "# **Answer**\\n- Visit [the guide](https://example.test).\\n- Use \x60voice mode\x60."
+        text = "# **Answer**\n- Visit [the guide](https://example.test).\n- Use \x60voice mode\x60."
         self.assertEqual(
             speech.clean_for_speech(text),
             "Answer Visit the guide. Use voice mode.",
