@@ -86,9 +86,13 @@ class SpeechRouter:
 
     def speak(self, text: str) -> str:
         if self.neural.available:
-            for chunk in sentence_chunks(text):
-                self.neural.speak(chunk)
-            return "neural"
+            try:
+                for chunk in sentence_chunks(text):
+                    self.neural.speak(chunk)
+                return "neural"
+            except Exception:
+                # Voice output must survive optional neural-runtime failures.
+                pass
         self.native.speak(text)
         return "native"
 
