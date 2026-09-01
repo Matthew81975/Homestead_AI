@@ -73,6 +73,26 @@ def run_speech_command(command: list[str], text: str) -> None:
     )
 
 
+class SpeechRouter:
+    """Choose the natural neural voice when ready, otherwise use native TTS."""
+
+    def __init__(self, neural, native):
+        self.neural = neural
+        self.native = native
+
+    @property
+    def available(self) -> bool:
+        return bool(self.neural.available or self.native.available)
+
+    def speak(self, text: str) -> str:
+        if self.neural.available:
+            for chunk in sentence_chunks(text):
+                self.neural.speak(chunk)
+            return "neural"
+        self.native.speak(text)
+        return "native"
+
+
 class SpeechEngine:
     """Serialize spoken replies on a daemon worker so Tk never blocks."""
 
