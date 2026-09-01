@@ -25,11 +25,11 @@ def sentence_chunks(text: str, max_chars: int = 240) -> list[str]:
     value = str(text or "").strip()
     if not value:
         return []
-    sentences = re.findall(r".+?(?:[.!?](?=\\s|$)|$)", value, flags=re.DOTALL)
+    sentences = re.findall(r".+?(?:[.!?](?=\s|$)|$)", value, flags=re.DOTALL)
     chunks: list[str] = []
     current = ""
     for sentence in sentences:
-        sentence = re.sub(r"\\s+", " ", sentence).strip()
+        sentence = re.sub(r"\s+", " ", sentence).strip()
         candidate = f"{current} {sentence}".strip()
         if current and len(candidate) > max_chars:
             chunks.append(current)
