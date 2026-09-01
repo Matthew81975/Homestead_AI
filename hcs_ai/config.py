@@ -48,6 +48,19 @@ def save_config(config: dict) -> None:
     temp.replace(LOCAL_CONFIG_PATH)
 
 
+def update_local_config(patch: dict) -> dict:
+    """Merge a settings patch into config.json without copying default-only values."""
+    try:
+        local = json.loads(LOCAL_CONFIG_PATH.read_text(encoding="utf-8"))
+        if not isinstance(local, dict):
+            local = {}
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        local = {}
+    updated = _deep_merge(local, patch)
+    save_config(updated)
+    return updated
+
+
 def llm_config() -> dict:
     """Return settings for HCS-managed local inference.
 
