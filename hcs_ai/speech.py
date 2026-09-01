@@ -169,6 +169,18 @@ class KokoroSpeechBackend:
         self._player(samples, sample_rate)
 
 
+class CommandSpeechBackend:
+    def __init__(self, command: list[str] | None = None):
+        self.command = list(command) if command is not None else native_speech_command()
+
+    @property
+    def available(self) -> bool:
+        return bool(self.command)
+
+    def speak(self, text: str) -> None:
+        run_speech_command(self.command or [], text)
+
+
 class SpeechRouter:
     """Choose the natural neural voice when ready, otherwise use native TTS."""
 
@@ -196,19 +208,24 @@ class SpeechRouter:
 class SpeechEngine:
     """Serialize spoken replies on a daemon worker so Tk never blocks."""
 
-    def __init__(self, command: list[str] | None = None):
-        self.command = list(command) if command is not None else native_speech_command()
+    def __init__(self, command: list[str] | None = None, router=None):
+        native = CommandSpeechBackend(command)
+        self.router = router or SpeechRouter(
+            neural=KokoroSpeechBackend(),
+            native=native,
+        )
+        self.command = native.command
         self._queue: queue.Queue[str] = queue.Queue()
         self._worker: threading.Thread | None = None
         self._lock = threading.Lock()
 
     @property
     def available(self) -> bool:
-        return bool(self.command)
+        return bool(self.router.available)
 
     def speak(self, text: str) -> bool:
         spoken = clean_for_speech(text)
-        if not spoken or not self.command:
+        if not spoken or not self.router.available:
             return False
         self._queue.put(spoken)
         with self._lock:
@@ -224,6 +241,6 @@ class SpeechEngine:
             except queue.Empty:
                 return
             try:
-                run_speech_command(self.command or [], text)
+                self.router.speak(text)
             finally:
                 self._queue.task_done()
