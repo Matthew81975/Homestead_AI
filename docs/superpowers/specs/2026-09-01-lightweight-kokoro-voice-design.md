@@ -32,7 +32,7 @@ The public behavior of `SpeechEngine` and `SpeechRouter` remains stable. The neu
 The adapter:
 
 1. Normalizes and chunks text.
-2. Converts American English text to Kokoro-compatible phonemes with Misaki's dictionary-based path and `fallback=None`.
+2. Converts American English text to Kokoro-compatible phonemes with HCS's vendored, Apache-2.0 Misaki dictionary/tokenization subset and no neural or eSpeak fallback.
 3. Maps phonemes to the pinned Kokoro vocabulary.
 4. Runs a quantized Kokoro model through ONNX Runtime.
 5. Selects the `af_heart` voice vector and synthesizes at speed `0.95`.
@@ -67,11 +67,11 @@ Voice Setup remains an explicit user action and discloses the approximate downlo
 
 ### Pronunciation layer
 
-Misaki is installed without its `en` dependency extra. HCS declares only the permissive runtime packages actually required by Misaki's non-transformer English dictionary path. The G2P object is configured with `trf=False`, American English, and `fallback=None`.
+HCS vendors only Misaki's Apache-2.0 American-English dictionary, token representation, and deterministic pronunciation logic under `hcs_ai/vendor/misaki_en/`. The vendored copy excludes Misaki's neural fallback, eSpeak adapter, multilingual modules, package installer behavior, Torch imports, and Transformer imports. The upstream version or commit, Apache-2.0 license, attribution, copied-file inventory, and deliberate modifications are recorded beside the vendored code.
 
-Unknown or unpronounceable text must not invoke eSpeak. Instead, the neural backend reports a chunk-level failure so the router can use native Windows speech for that chunk.
+The vendored pronunciation API is `EnglishG2P.phonemize(text: str) -> str`. It never downloads a language model or invokes a network service. Unknown or unpronounceable text raises `UnsupportedPronunciation`, allowing the router to use native Windows speech for that chunk.
 
-Before implementation is accepted, CI produces and reviews the resolved dependency license list. LGPL dependencies, if any, must remain dynamically installed and have their license/notice obligations documented; GPL dependencies are not accepted in the natural-voice path.
+Before implementation is accepted, CI produces and reviews the resolved dependency license list. Runtime dependencies for the natural voice path must be permissively licensed; GPL dependencies are not accepted.
 
 ### ONNX synthesis adapter
 
@@ -89,7 +89,7 @@ If native speech is unavailable, the router returns an unavailable result withou
 2. `clean_for_speech` removes presentation-only Markdown.
 3. `sentence_chunks` preserves sentence boundaries where possible and hard-splits oversized text at clauses or whitespace.
 4. Each chunk is passed to the natural backend.
-5. Misaki produces phonemes without an external fallback.
+5. The vendored English dictionary path produces phonemes without an external fallback.
 6. The ONNX adapter generates waveform samples for `af_heart`.
 7. The WAV playback layer plays the chunk.
 8. Any chunk failure routes that chunk and the remainder to SAPI.
@@ -100,7 +100,7 @@ If native speech is unavailable, the router returns an unavailable result withou
 - Missing assets: natural backend is unavailable; SAPI remains usable.
 - Interrupted download: partial file is removed.
 - Size or hash mismatch: asset is rejected and setup reports a verification error.
-- Unsupported pronunciation: failed chunk and remaining chunks route to SAPI.
+- Unsupported pronunciation: `UnsupportedPronunciation` routes the failed chunk and remaining chunks to SAPI.
 - Neural model or playback exception: failed chunk and remaining chunks route to SAPI.
 - Missing SAPI command: return unavailable without launching a process.
 - SAPI exception: contain it within the current reply and continue the queue.
@@ -113,7 +113,8 @@ Tests must cover:
 - sentence-boundary preservation and hard maximum chunk length;
 - Markdown cleaning;
 - exact `af_heart`, `0.95`, and American-English profile;
-- deterministic phoneme-to-ID encoding;
+- deterministic vendored English pronunciation and phoneme-to-ID encoding;
+- unsupported words raising `UnsupportedPronunciation`;
 - expected ONNX input construction and output playback;
 - lazy initialization;
 - complete verified asset installation;
