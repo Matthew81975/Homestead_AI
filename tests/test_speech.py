@@ -75,6 +75,15 @@ class _BytesResponse(io.BytesIO):
         return False
 
 
+class _FakeKokoro:
+    def __init__(self):
+        self.calls = []
+
+    def create(self, text, **options):
+        self.calls.append((text, options))
+        return [0.0, 0.25], 24000
+
+
 class NaturalVoiceAssetsTests(unittest.TestCase):
     def test_download_natural_voice_assets_installs_complete_pack(self):
         payloads = {
@@ -94,6 +103,32 @@ class NaturalVoiceAssetsTests(unittest.TestCase):
 
         self.assertEqual(contents, [b"model-bytes", b"voice-bytes"])
         self.assertTrue(ready)
+
+    def test_kokoro_backend_uses_alexandria_voice_profile(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            model_path, voices_path = speech.natural_voice_asset_paths(root)
+            model_path.parent.mkdir(parents=True)
+            model_path.write_bytes(b"model")
+            voices_path.write_bytes(b"voices")
+            kokoro = _FakeKokoro()
+            played = []
+            backend = speech.KokoroSpeechBackend(
+                root=root,
+                synthesizer=kokoro,
+                player=lambda samples, rate: played.append((samples, rate)),
+            )
+
+            backend.speak("Good morning, Matthew.")
+
+        self.assertEqual(
+            kokoro.calls,
+            [(
+                "Good morning, Matthew.",
+                {"voice": "af_heart", "speed": 0.95, "lang": "en-us"},
+            )],
+        )
+        self.assertEqual(played, [([0.0, 0.25], 24000)])
 
     def test_natural_voice_ready_requires_both_nonempty_assets(self):
         with tempfile.TemporaryDirectory() as folder:
