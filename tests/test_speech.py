@@ -1,3 +1,4 @@
+import io
 import json
 import tempfile
 import unittest
@@ -65,7 +66,35 @@ class SpeechHelpersTests(unittest.TestCase):
         self.assertFalse(engine.speak("   "))
 
 
+class _BytesResponse(io.BytesIO):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+        return False
+
+
 class NaturalVoiceAssetsTests(unittest.TestCase):
+    def test_download_natural_voice_assets_installs_complete_pack(self):
+        payloads = {
+            "kokoro-v1.0.onnx": b"model-bytes",
+            "voices-v1.0.bin": b"voice-bytes",
+        }
+
+        def opener(url, timeout):
+            name = url.rsplit("/", 1)[-1]
+            return _BytesResponse(payloads[name])
+
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            installed = speech.download_natural_voice_assets(root, opener=opener)
+            contents = [path.read_bytes() for path in installed]
+            ready = speech.natural_voice_ready(root)
+
+        self.assertEqual(contents, [b"model-bytes", b"voice-bytes"])
+        self.assertTrue(ready)
+
     def test_natural_voice_ready_requires_both_nonempty_assets(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
