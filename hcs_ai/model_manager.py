@@ -86,6 +86,26 @@ def list_local_models() -> list[dict[str, Any]]:
     return out
 
 
+def _sibling_size(sibling: dict[str, Any]) -> int | None:
+    size = sibling.get("size")
+    if not isinstance(size, (int, float)):
+        lfs = sibling.get("lfs")
+        size = lfs.get("size") if isinstance(lfs, dict) else None
+    return int(size) if isinstance(size, (int, float)) else None
+
+
+def _repo_siblings_with_metadata(repo_id: str) -> list[dict[str, Any]]:
+    encoded_repo = urllib.parse.quote(repo_id, safe="/")
+    req = urllib.request.Request(
+        f"https://huggingface.co/api/models/{encoded_repo}?blobs=true",
+        headers={"User-Agent": "HCS-AI/0.10 model-manager"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    siblings = payload.get("siblings") if isinstance(payload, dict) else None
+    return siblings if isinstance(siblings, list) else []
+
+
 def search_huggingface(query: str, limit: int = 20) -> list[dict[str, Any]]:
     query = (query or "").strip()
     if not query:
@@ -110,15 +130,27 @@ def search_huggingface(query: str, limit: int = 20) -> list[dict[str, Any]]:
         if not _HF_REPO.match(repo_id):
             continue
         siblings = repo.get("siblings") or []
+        gguf_siblings = [
+            sibling for sibling in siblings
+            if str(sibling.get("rfilename") or "").lower().endswith(".gguf")
+        ]
+        if gguf_siblings and any(_sibling_size(sibling) is None for sibling in gguf_siblings):
+            try:
+                detailed_siblings = _repo_siblings_with_metadata(repo_id)
+                if detailed_siblings:
+                    siblings = detailed_siblings
+            except (OSError, ValueError):
+                # File sizes are helpful, but a metadata failure should not hide search results.
+                pass
         for sibling in siblings:
             filename = str(sibling.get("rfilename") or "")
             if not filename.lower().endswith(".gguf"):
                 continue
-            size = sibling.get("size")
+            size = _sibling_size(sibling)
             item = {
                 "repo_id": repo_id,
                 "filename": filename,
-                "size_bytes": int(size) if isinstance(size, (int, float)) else None,
+                "size_bytes": size,
                 "quantization": quantization_from_name(filename),
                 "downloads": repo.get("downloads"),
                 "likes": repo.get("likes"),
