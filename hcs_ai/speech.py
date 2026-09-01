@@ -7,6 +7,18 @@ import shutil
 import subprocess
 import sys
 import threading
+from pathlib import Path
+
+from .config import ROOT
+
+
+def natural_voice_asset_paths(root: Path = ROOT) -> tuple[Path, Path]:
+    folder = Path(root) / "runtime" / "voice"
+    return folder / "kokoro-v1.0.onnx", folder / "voices-v1.0.bin"
+
+
+def natural_voice_ready(root: Path = ROOT) -> bool:
+    return all(path.is_file() and path.stat().st_size > 0 for path in natural_voice_asset_paths(root))
 
 
 def clean_for_speech(text: str) -> str:
