@@ -10,7 +10,7 @@ import threading
 import uuid
 from pathlib import Path
 from .config import ROOT, load_config, update_local_config
-from .speech import SpeechEngine
+from .speech import SpeechEngine, download_natural_voice_assets, natural_voice_ready
 from .ports import port_candidates, saved_endpoint
 
 BASE = None
@@ -303,7 +303,13 @@ class App(tk.Tk):
             variable=self.speak_replies,
             command=self._set_speak_replies,
         )
-        self.voice_toggle.pack(side="left", padx=(0, 8))
+        self.voice_toggle.pack(side="left", padx=(0, 4))
+        self.voice_setup_button = ttk.Button(
+            row,
+            text="Voice Setup",
+            command=self._setup_natural_voice,
+        )
+        self.voice_setup_button.pack(side="left", padx=(0, 8))
         self.status = ttk.Label(self.chat_tab, text="Checking server...")
         self.after(1500, self._refresh_ai_mode_status)
         self.status.pack(anchor="w", padx=8, pady=(0,6))
@@ -487,6 +493,44 @@ class App(tk.Tk):
         self.update_idletasks()
         total = max(1, self.workspace_pane.winfo_height())
         self._set_ai_sash(max(260, int(total * 0.78)))
+
+    def _setup_natural_voice(self):
+        if natural_voice_ready():
+            self._speech_engine = SpeechEngine()
+            messagebox.showinfo("Natural Voice", "Alexandria's natural voice is ready.")
+            return
+        approved = messagebox.askyesno(
+            "Install Natural Voice",
+            "Download Alexandria's approximately 354 MB Kokoro voice pack? "
+            "It runs offline after installation and has no usage fees.",
+        )
+        if not approved:
+            return
+        self.voice_setup_button.configure(state="disabled")
+        self.status.config(text="Downloading Alexandria's natural voice...")
+
+        def work():
+            try:
+                download_natural_voice_assets()
+                self.after(0, self._natural_voice_setup_done)
+            except Exception as exc:
+                self.after(0, lambda m=str(exc): self._natural_voice_setup_failed(m))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _natural_voice_setup_done(self):
+        self._speech_engine = SpeechEngine()
+        self.voice_setup_button.configure(state="normal")
+        self.status.config(text="Natural voice ready")
+        messagebox.showinfo(
+            "Natural Voice",
+            "Alexandria's warm conversational voice is installed and ready.",
+        )
+
+    def _natural_voice_setup_failed(self, message):
+        self.voice_setup_button.configure(state="normal")
+        self.status.config(text="Natural voice setup failed; standard voice remains available")
+        messagebox.showerror("Natural Voice Setup", message)
 
     def _set_speak_replies(self):
         enabled = bool(self.speak_replies.get())
