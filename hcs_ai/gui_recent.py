@@ -27,6 +27,35 @@ def format_telemetry(item: dict | None) -> str:
     return " | ".join(parts)
 
 
+def active_model_identity(
+    cloud_response: dict | None,
+    effective_mode: str,
+    local_item: dict | None,
+) -> str:
+    if str(effective_mode).lower() == "live":
+        cloud = cloud_response or {}
+        provider = str(cloud.get("provider") or "").strip()
+        model = str(cloud.get("model") or "").strip()
+        return f"{provider}/{model}" if provider and model else ""
+    return str((local_item or {}).get("model") or "")
+
+
+def format_active_model_status(
+    cloud_response: dict | None,
+    effective_mode: str,
+    local_item: dict | None,
+) -> str:
+    if str(effective_mode).lower() == "live":
+        cloud = cloud_response or {}
+        provider = str(cloud.get("provider") or "").strip()
+        model = str(cloud.get("model") or "").strip()
+        tier = str(cloud.get("tier") or "unknown")
+        if provider and model:
+            return f"Cloud model: {provider} / {model} | Tier: {tier}"
+        return "Cloud model: waiting for first response"
+    return format_telemetry(local_item)
+
+
 def _human_bytes(value: int | None) -> str:
     if value is None:
         return "?"
@@ -55,7 +84,15 @@ class App(HomeApp):
         self._build_models_tab()
         self._build_prompt_functions_tab()
 
-        self.performance_status = ttk.Label(self.chat_tab, text=format_telemetry(telemetry.latest()))
+        self._last_cloud_response = None
+        self.performance_status = ttk.Label(
+            self.chat_tab,
+            text=format_active_model_status(
+                None,
+                getattr(self, "_effective_ai_mode", "offline"),
+                telemetry.latest(),
+            ),
+        )
         self.performance_status.pack(anchor="w", padx=8, pady=(0, 8))
         self.after(1200, self._refresh_performance_label)
 
@@ -71,8 +108,23 @@ class App(HomeApp):
         try:
             out = api(
                 "POST", "/chat",
-                {"message": msg, "history": self.history[-12:], "use_kb": self.use_kb.get()},
+                {
+                    "message": msg,
+                    "history": self.history[-12:],
+                    "use_kb": self.use_kb.get(),
+                    "task_id": self.cloud_task_id,
+                },
             )
+            if out.get("provider") and out.get("model"):
+                self._last_cloud_response = dict(out)
+                self.cloud_route_label.config(
+                    text=(
+                        f"Cloud: {out.get('tier', '?')} | "
+                        f"{out['provider']} | {out['model']}"
+                    )
+                )
+            else:
+                self._last_cloud_response = None
             text = out.get("text", "")
             self.append_chat("HCS-AI", text)
             self.history += [
@@ -90,7 +142,13 @@ class App(HomeApp):
     def _refresh_performance_label(self):
         if hasattr(self, "performance_status"):
             try:
-                self.performance_status.config(text=format_telemetry(telemetry.latest()))
+                self.performance_status.config(
+                    text=format_active_model_status(
+                        getattr(self, "_last_cloud_response", None),
+                        getattr(self, "_effective_ai_mode", "offline"),
+                        telemetry.latest(),
+                    )
+                )
             except Exception as exc:
                 self.performance_status.config(text=f"Model performance unavailable: {exc}")
 
