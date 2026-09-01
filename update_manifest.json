@@ -30,6 +30,7 @@
     "hcs_ai/prompt_functions.py",
     "hcs_ai/server.py",
     "hcs_ai/server_tree.py",
+    "hcs_ai/speech.py",
     "hcs_ai/telemetry.py",
     "hcs_ai/tools.py",
     "hcs_ai/wait_for_server.py",
