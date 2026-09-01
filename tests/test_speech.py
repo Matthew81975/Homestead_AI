@@ -15,6 +15,15 @@ class SpeechHelpersTests(unittest.TestCase):
             "Answer Visit the guide. Use voice mode.",
         )
 
+    def test_sentence_chunks_preserve_complete_sentences(self):
+        self.assertEqual(
+            speech.sentence_chunks(
+                "First thought. Second thought! Final question?",
+                max_chars=24,
+            ),
+            ["First thought.", "Second thought!", "Final question?"],
+        )
+
     @patch("hcs_ai.speech.subprocess.run")
     def test_run_speech_command_passes_reply_over_stdin(self, run):
         speech.run_speech_command(["speaker", "--stdin"], "hello; $(safe)")
