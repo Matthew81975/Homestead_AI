@@ -20,6 +20,17 @@ class _RecordingSpeechBackend:
         self.spoken.append(text)
 
 
+class _RecordingRouter:
+    available = True
+
+    def __init__(self):
+        self.spoken = []
+
+    def speak(self, text):
+        self.spoken.append(text)
+        return "neural"
+
+
 class SpeechHelpersTests(unittest.TestCase):
     def test_clean_for_speech_removes_chat_markdown(self):
         text = "# **Answer**\n- Visit [the guide](https://example.test).\n- Use \x60voice mode\x60."
@@ -60,6 +71,15 @@ class SpeechHelpersTests(unittest.TestCase):
 
         self.assertEqual(router.speak("Fallback reply."), "native")
         self.assertEqual(native.spoken, ["Fallback reply."])
+
+    def test_engine_delivers_queued_reply_through_router(self):
+        router = _RecordingRouter()
+        engine = speech.SpeechEngine(router=router)
+
+        self.assertTrue(engine.speak("Queued reply."))
+        engine._queue.join()
+
+        self.assertEqual(router.spoken, ["Queued reply."])
 
     def test_engine_rejects_empty_spoken_text(self):
         engine = speech.SpeechEngine(command=["speaker"])
