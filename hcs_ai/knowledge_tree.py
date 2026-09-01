@@ -5,8 +5,9 @@ from pathlib import Path
 
 import httpx
 
-from .config import llm_config
+from .config import llm_config, load_config
 from .db import connect, now_iso
+from . import cloud_router
 
 AUTO_CREATE_THRESHOLD = 0.78
 REVIEW_THRESHOLD = 0.55
@@ -93,7 +94,6 @@ def _resolve_model(client: httpx.Client, cfg: dict) -> str:
 
 
 def analyze_for_tree(*, title: str, artifact_type: str, text: str, metadata: dict | None = None) -> dict:
-    cfg = llm_config()
     tree = _existing_tree_snapshot()
     prompt = f"""You are the taxonomy classifier for HCS. Analyze the supplied knowledge artifact and place it in a hierarchical knowledge taxonomy.
 
@@ -128,22 +128,39 @@ Metadata: {json.dumps(metadata or {}, ensure_ascii=False)}
 Artifact content:
 {text[:70000]}
 """
-    url = cfg["base_url"].rstrip("/") + "/chat/completions"
-    with httpx.Client(timeout=max(120, int(cfg.get("timeout_seconds", 120)))) as client:
-        model = _resolve_model(client, cfg)
-        r = client.post(url, json={
-            "model": model,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.1,
-        })
-        r.raise_for_status()
-        raw = (r.json()["choices"][0]["message"].get("content") or "").strip()
+    mode = str(load_config().get("ai", {}).get("mode") or "offline").lower()
+    if mode == "live":
+        result = cloud_router.chat(
+            "knowledge-tree-classifier",
+            [{"role": "user", "content": prompt}],
+        )
+        if result.get("approval_required"):
+            raise RuntimeError(
+                "Knowledge Tree classification requires approval before changing AI capability tier."
+            )
+        raw = str(result.get("text") or "").strip()
+        provider = str(result.get("provider") or "cloud")
+        model = str(result.get("model") or "unknown")
+        model_name = f"{provider}/{model}"
+    else:
+        cfg = llm_config()
+        url = cfg["base_url"].rstrip("/") + "/chat/completions"
+        with httpx.Client(timeout=max(120, int(cfg.get("timeout_seconds", 120)))) as client:
+            model = _resolve_model(client, cfg)
+            r = client.post(url, json={
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.1,
+            })
+            r.raise_for_status()
+            raw = (r.json()["choices"][0]["message"].get("content") or "").strip()
+        model_name = model
     start = raw.find("{")
     end = raw.rfind("}")
     if start < 0 or end < start:
         raise RuntimeError("Knowledge classifier did not return JSON.")
     result = json.loads(raw[start:end + 1])
-    result["model_name"] = model
+    result["model_name"] = model_name
     return result
 
 
