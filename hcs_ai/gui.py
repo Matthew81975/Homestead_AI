@@ -9,7 +9,8 @@ import subprocess
 import threading
 import uuid
 from pathlib import Path
-from .config import ROOT
+from .config import ROOT, load_config, update_local_config
+from .speech import SpeechEngine
 from .ports import port_candidates, saved_endpoint
 
 BASE = None
@@ -86,6 +87,7 @@ class App(tk.Tk):
         self._thinking_frame = 0
         self.cloud_task_id = "alexandria-" + uuid.uuid4().hex
         self._pending_cloud_request = None
+        self._speech_engine = SpeechEngine()
         self._install_clipboard_bindings()
 
         # Main workspace: persistent tabbed tools above, Alexandria console below.
@@ -291,6 +293,17 @@ class App(tk.Tk):
         self.send_button.pack(side="left", padx=(8,0))
         self.use_kb = tk.BooleanVar(value=True)
         ttk.Checkbutton(row, text="Use KB", variable=self.use_kb).pack(side="left", padx=8)
+        voice_settings = load_config().get("voice", {})
+        self.speak_replies = tk.BooleanVar(
+            value=bool(voice_settings.get("speak_replies", False))
+        )
+        self.voice_toggle = ttk.Checkbutton(
+            row,
+            text="Speak replies",
+            variable=self.speak_replies,
+            command=self._set_speak_replies,
+        )
+        self.voice_toggle.pack(side="left", padx=(0, 8))
         self.status = ttk.Label(self.chat_tab, text="Checking server...")
         self.after(1500, self._refresh_ai_mode_status)
         self.status.pack(anchor="w", padx=8, pady=(0,6))
@@ -475,6 +488,21 @@ class App(tk.Tk):
         total = max(1, self.workspace_pane.winfo_height())
         self._set_ai_sash(max(260, int(total * 0.78)))
 
+    def _set_speak_replies(self):
+        enabled = bool(self.speak_replies.get())
+        if enabled and not self._speech_engine.available:
+            self.speak_replies.set(False)
+            messagebox.showwarning(
+                "Voice unavailable",
+                "No local text-to-speech engine was found on this computer.",
+            )
+            return
+        try:
+            update_local_config({"voice": {"speak_replies": enabled}})
+        except OSError as exc:
+            self.speak_replies.set(not enabled)
+            messagebox.showerror("Voice setting", f"Could not save voice setting: {exc}")
+
     def append_chat(self, who, text):
         self.chat_box.config(state="normal")
         self.chat_box.insert("end", f"{who}:\n")
@@ -484,6 +512,12 @@ class App(tk.Tk):
         self.chat_box.insert("end", "\n\n")
         self.chat_box.see("end")
         self.chat_box.config(state="disabled")
+        if (
+            who == "HCS-AI"
+            and hasattr(self, "speak_replies")
+            and self.speak_replies.get()
+        ):
+            self._speech_engine.speak(text)
 
     def _set_thinking(self, active):
         self._thinking = bool(active)
