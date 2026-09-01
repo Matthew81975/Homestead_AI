@@ -26,7 +26,7 @@ def test_kb_search_results_are_human_readable():
     text = format_kb_search_results([
         {
             "score": 1.0,
-            "source": r"E:\\Home\\Documents\\orchard.md",
+            "source": r"E:\Home\Documents\orchard.md",
             "chunk_index": 2,
             "text": "A node is stale after 3.5 reporting intervals.",
         }
