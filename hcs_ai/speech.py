@@ -20,6 +20,27 @@ def clean_for_speech(text: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
 
 
+def sentence_chunks(text: str, max_chars: int = 240) -> list[str]:
+    """Group complete sentences into short chunks for lower-latency speech."""
+    value = str(text or "").strip()
+    if not value:
+        return []
+    sentences = re.findall(r".+?(?:[.!?](?=\\s|$)|$)", value, flags=re.DOTALL)
+    chunks: list[str] = []
+    current = ""
+    for sentence in sentences:
+        sentence = re.sub(r"\\s+", " ", sentence).strip()
+        candidate = f"{current} {sentence}".strip()
+        if current and len(candidate) > max_chars:
+            chunks.append(current)
+            current = sentence
+        else:
+            current = candidate
+    if current:
+        chunks.append(current)
+    return chunks
+
+
 def native_speech_command() -> list[str] | None:
     """Return a local, OS-native text-to-speech command that reads stdin."""
     if os.name == "nt":
