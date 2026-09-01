@@ -106,3 +106,81 @@ def test_live_chat_audits_each_route_event(monkeypatch):
     route_audits = [detail for kind, detail in events if kind == "cloud_route_event"]
     assert len(route_audits) == 2
     assert "rate_limit" in route_audits[0]
+
+def test_live_chat_includes_active_kb_context(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(server, "audit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(server, "_ai_mode_status", lambda: {"effective_mode": "live"})
+    monkeypatch.setattr(
+        server,
+        "kb_search",
+        lambda query, limit=4: [{
+            "source": "orchard.md",
+            "chunk_index": 2,
+            "text": "A node is stale after 3.5 reporting intervals.",
+            "score": 1.0,
+        }],
+    )
+
+    def fake_cloud_chat(task_id, messages, tools=None):
+        captured["messages"] = messages
+        return {
+            "text": "grounded",
+            "provider": "p1",
+            "model": "m1",
+            "tier": "high",
+            "approval_required": False,
+        }
+
+    monkeypatch.setattr(server.cloud_router, "chat", fake_cloud_chat)
+    response = client.post(
+        "/chat",
+        json={
+            "message": "When is a node stale?",
+            "use_kb": True,
+            "task_id": "t-kb",
+        },
+    )
+
+    assert response.status_code == 200
+    system_message = captured["messages"][0]["content"]
+    assert "LOCAL KNOWLEDGE CONTEXT" in system_message
+    assert "[orchard.md #2]" in system_message
+    assert "3.5 reporting intervals" in system_message
+
+
+def test_live_chat_skips_kb_search_when_disabled(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(server, "audit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(server, "_ai_mode_status", lambda: {"effective_mode": "live"})
+    monkeypatch.setattr(
+        server,
+        "kb_search",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("KB search must not run")
+        ),
+    )
+
+    def fake_cloud_chat(task_id, messages, tools=None):
+        captured["messages"] = messages
+        return {
+            "text": "ungrounded",
+            "provider": "p1",
+            "model": "m1",
+            "tier": "high",
+            "approval_required": False,
+        }
+
+    monkeypatch.setattr(server.cloud_router, "chat", fake_cloud_chat)
+    response = client.post(
+        "/chat",
+        json={
+            "message": "hello",
+            "use_kb": False,
+            "task_id": "t-no-kb",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "LOCAL KNOWLEDGE CONTEXT" not in captured["messages"][0]["content"]
+
