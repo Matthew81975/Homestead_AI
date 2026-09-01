@@ -422,9 +422,24 @@ class App(gui_recent.App):
     def _refresh_status(self):
         try:
             latest = telemetry.latest()
-            if latest:
+            effective_mode = getattr(self, "_effective_ai_mode", "offline")
+            cloud_response = getattr(self, "_last_cloud_response", None)
+            active_model = gui_recent.active_model_identity(
+                cloud_response,
+                effective_mode,
+                latest,
+            )
+            if str(effective_mode).lower() == "live":
                 self.diagnostics.update_telemetry(
-                    active_model=latest.get("model"),
+                    active_model=active_model or None,
+                    prompt_tokens_per_second=None,
+                    output_tokens_per_second=None,
+                    backend_state="running" if base_gui.BASE else "disconnected",
+                    backend_port=_endpoint_port(),
+                )
+            elif latest:
+                self.diagnostics.update_telemetry(
+                    active_model=active_model or None,
                     prompt_tokens_per_second=latest.get("prompt_tokens_per_second"),
                     output_tokens_per_second=latest.get("generation_tokens_per_second"),
                     backend_state="running" if base_gui.BASE else "disconnected",
@@ -432,6 +447,9 @@ class App(gui_recent.App):
                 )
             else:
                 self.diagnostics.update_telemetry(
+                    active_model=None,
+                    prompt_tokens_per_second=None,
+                    output_tokens_per_second=None,
                     backend_state="running" if base_gui.BASE else "disconnected",
                     backend_port=_endpoint_port(),
                 )
