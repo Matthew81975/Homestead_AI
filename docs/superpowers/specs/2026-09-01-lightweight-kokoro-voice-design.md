@@ -52,7 +52,14 @@ A manifest defines each required file with:
 - SHA-256 digest;
 - upstream project and license.
 
-The intended model is a quantized Kokoro ONNX artifact. The final artifact choice is accepted only after its upstream license, digest, model inputs, and Windows ONNX Runtime compatibility are verified.
+The pinned asset revision is ONNX Community's Apache-2.0 Kokoro-82M v1.0 ONNX commit `4685882`. HCS downloads only these two files:
+
+| Asset | Exact bytes | SHA-256 |
+| --- | ---: | --- |
+| `onnx/model_quantized.onnx` | 92,361,116 | `fbae9257e1e05ffc727e951ef9b9c98418e6d79f1c9b6b13bd59f5c9028a1478` |
+| `voices/af_heart.bin` | 522,240 | `d583ccff3cdca2f7fae535cb998ac07e9fcb90f09737b9a41fa2734ec44a8f0b` |
+
+Download URLs use `https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/4685882/<path>?download=true`. The voice asset download is 92,883,356 bytes (about 93 MB). The Kokoro vocabulary is represented as reviewed source data in HCS rather than downloaded at runtime.
 
 ### Downloader
 
