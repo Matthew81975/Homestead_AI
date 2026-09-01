@@ -7,9 +7,16 @@ import shutil
 import subprocess
 import sys
 import threading
+import urllib.request
 from pathlib import Path
 
 from .config import ROOT
+
+
+VOICE_ASSET_URLS = (
+    "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/kokoro-v1.0.onnx",
+    "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/voices-v1.0.bin",
+)
 
 
 def natural_voice_asset_paths(root: Path = ROOT) -> tuple[Path, Path]:
@@ -19,6 +26,26 @@ def natural_voice_asset_paths(root: Path = ROOT) -> tuple[Path, Path]:
 
 def natural_voice_ready(root: Path = ROOT) -> bool:
     return all(path.is_file() and path.stat().st_size > 0 for path in natural_voice_asset_paths(root))
+
+
+def download_natural_voice_assets(
+    root: Path = ROOT,
+    opener=urllib.request.urlopen,
+) -> tuple[Path, Path]:
+    paths = natural_voice_asset_paths(root)
+    paths[0].parent.mkdir(parents=True, exist_ok=True)
+    for url, destination in zip(VOICE_ASSET_URLS, paths):
+        partial = destination.with_suffix(destination.suffix + ".part")
+        try:
+            with opener(url, timeout=180) as response, partial.open("wb") as output:
+                shutil.copyfileobj(response, output)
+            if partial.stat().st_size <= 0:
+                raise OSError(f"Downloaded voice asset is empty: {destination.name}")
+            partial.replace(destination)
+        except Exception:
+            partial.unlink(missing_ok=True)
+            raise
+    return paths
 
 
 def clean_for_speech(text: str) -> str:
