@@ -65,6 +65,18 @@ class SpeechHelpersTests(unittest.TestCase):
         self.assertFalse(engine.speak("   "))
 
 
+class NaturalVoiceAssetsTests(unittest.TestCase):
+    def test_natural_voice_ready_requires_both_nonempty_assets(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            model, voices = speech.natural_voice_asset_paths(root)
+            model.parent.mkdir(parents=True)
+            model.write_bytes(b"model")
+            self.assertFalse(speech.natural_voice_ready(root))
+            voices.write_bytes(b"voices")
+            self.assertTrue(speech.natural_voice_ready(root))
+
+
 class VoicePreferenceTests(unittest.TestCase):
     def test_update_local_config_preserves_existing_local_settings(self):
         with tempfile.TemporaryDirectory() as folder:
