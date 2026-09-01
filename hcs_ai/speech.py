@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import importlib.util
 import os
 import queue
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import urllib.request
 from pathlib import Path
@@ -110,6 +112,61 @@ def run_speech_command(command: list[str], text: str) -> None:
         stderr=subprocess.DEVNULL,
         creationflags=flags,
     )
+
+
+def play_audio_samples(samples, sample_rate: int) -> None:
+    import soundfile as sf
+
+    handle = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    path = Path(handle.name)
+    handle.close()
+    try:
+        sf.write(str(path), samples, sample_rate)
+        if os.name == "nt":
+            import winsound
+
+            winsound.PlaySound(str(path), winsound.SND_FILENAME)
+            return
+        command = shutil.which("afplay") or shutil.which("aplay")
+        if not command:
+            raise RuntimeError("No WAV playback command is available.")
+        subprocess.run([command, str(path)], check=True)
+    finally:
+        path.unlink(missing_ok=True)
+
+
+class KokoroSpeechBackend:
+    """Lazy, optional Kokoro-ONNX voice using Alexandria's warm profile."""
+
+    def __init__(self, root: Path = ROOT, synthesizer=None, player=None):
+        self.root = Path(root)
+        self._synthesizer = synthesizer
+        self._player = player or play_audio_samples
+
+    @property
+    def available(self) -> bool:
+        dependencies_ready = self._synthesizer is not None or (
+            importlib.util.find_spec("kokoro_onnx") is not None
+            and importlib.util.find_spec("soundfile") is not None
+        )
+        return natural_voice_ready(self.root) and dependencies_ready
+
+    def _load(self):
+        if self._synthesizer is None:
+            from kokoro_onnx import Kokoro
+
+            model, voices = natural_voice_asset_paths(self.root)
+            self._synthesizer = Kokoro(str(model), str(voices))
+        return self._synthesizer
+
+    def speak(self, text: str) -> None:
+        samples, sample_rate = self._load().create(
+            text,
+            voice="af_heart",
+            speed=0.95,
+            lang="en-us",
+        )
+        self._player(samples, sample_rate)
 
 
 class SpeechRouter:
