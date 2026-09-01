@@ -52,6 +52,14 @@ class SpeechHelpersTests(unittest.TestCase):
         self.assertEqual(neural.spoken, ["A warm reply."])
         self.assertEqual(native.spoken, [])
 
+    def test_router_falls_back_when_neural_voice_fails(self):
+        neural = _RecordingSpeechBackend(error=RuntimeError("neural failure"))
+        native = _RecordingSpeechBackend()
+        router = speech.SpeechRouter(neural=neural, native=native)
+
+        self.assertEqual(router.speak("Fallback reply."), "native")
+        self.assertEqual(native.spoken, ["Fallback reply."])
+
     def test_engine_rejects_empty_spoken_text(self):
         engine = speech.SpeechEngine(command=["speaker"])
         self.assertFalse(engine.speak("   "))
