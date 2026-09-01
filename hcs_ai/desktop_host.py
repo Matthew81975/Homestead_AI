@@ -97,7 +97,7 @@ def latest_commit_sha():
 
 def installed_commit_sha():
     try:
-        data = json.loads(UPDATE_STATE.read_text(encoding="utf-8"))
+        data = json.loads(UPDATE_STATE.read_text(encoding="utf-8-sig"))
         return str(data.get("installed_sha") or "")
     except (OSError, ValueError, TypeError):
         return ""

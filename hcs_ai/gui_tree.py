@@ -9,6 +9,30 @@ from tkinter import ttk, filedialog, messagebox
 from .gui import App as BaseApp, api
 
 
+def format_kb_search_results(results):
+    if not results:
+        return "No matching knowledge was found."
+
+    blocks = []
+    for index, item in enumerate(results, start=1):
+        score = item.get("score")
+        try:
+            relevance = f"{float(score):.2f}"
+        except (TypeError, ValueError):
+            relevance = "n/a"
+        source = str(item.get("source") or "Unknown source")
+        chunk = item.get("chunk_index")
+        chunk_text = str(chunk) if chunk is not None else "n/a"
+        passage = str(item.get("text") or "").strip()
+        blocks.append(
+            f"Result {index} — Relevance: {relevance}\n"
+            f"Source: {source}\n"
+            f"Chunk: {chunk_text}\n\n"
+            f"{passage}"
+        )
+    return ("\n\n" + ("─" * 72) + "\n\n").join(blocks)
+
+
 class App(BaseApp):
     def build_kb(self):
         top = ttk.Frame(self.kb_tab)
@@ -112,7 +136,7 @@ class App(BaseApp):
         try:
             out = api("GET", "/knowledge/search?q=" + urllib.parse.quote(q))
             self.kb_results.delete("1.0", "end")
-            self.kb_results.insert("end", json.dumps(out, indent=2))
+            self.kb_results.insert("end", format_kb_search_results(out))
         except Exception as e:
             messagebox.showerror("Search", str(e))
 
