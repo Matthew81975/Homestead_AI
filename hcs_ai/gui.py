@@ -1,5 +1,6 @@
 import json
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import ttk, filedialog, messagebox, simpledialog
 import urllib.request, urllib.parse
 import os
@@ -12,6 +13,30 @@ from .config import ROOT
 from .ports import port_candidates, saved_endpoint
 
 BASE = None
+
+
+def markdown_segments(text):
+    """Split a small, safe Markdown subset for display in Tk text widgets."""
+    value = str(text or "")
+    segments = []
+    position = 0
+    for match in re.finditer(r"\*\*(.+?)\*\*", value, flags=re.DOTALL):
+        if match.start() > position:
+            segments.append((value[position:match.start()], None))
+        segments.append((match.group(1), "bold"))
+        position = match.end()
+    if position < len(value):
+        segments.append((value[position:], None))
+    return segments or [(value, None)]
+
+
+def read_update_state(path):
+    """Read updater state written by either Windows PowerShell or PowerShell 7."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8-sig"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError, TypeError):
+        return {}
 
 
 def _health_at(host, port, timeout=0.25):
@@ -250,6 +275,10 @@ class App(tk.Tk):
         chat_area = ttk.Frame(self.chat_tab)
         chat_area.pack(fill="both", expand=True, padx=8, pady=6)
         self.chat_box = tk.Text(chat_area, wrap="word", state="disabled", height=8)
+        base_chat_font = tkfont.Font(font=self.chat_box.cget("font"))
+        self._chat_bold_font = base_chat_font.copy()
+        self._chat_bold_font.configure(weight="bold")
+        self.chat_box.tag_configure("chat_bold", font=self._chat_bold_font)
         chat_scroll = ttk.Scrollbar(chat_area, orient="vertical", command=self.chat_box.yview)
         self.chat_box.configure(yscrollcommand=chat_scroll.set)
         self.chat_box.pack(side="left", fill="both", expand=True)
@@ -390,6 +419,7 @@ class App(tk.Tk):
         selected = str(out.get("selected_mode") or "offline")
         effective = str(out.get("effective_mode") or "offline")
         self._last_ai_mode = selected
+        self._effective_ai_mode = effective
         self.ai_mode_var.set(selected)
         internet = bool(out.get("internet_available"))
         cloud = bool(out.get("cloud_configured"))
@@ -447,8 +477,13 @@ class App(tk.Tk):
 
     def append_chat(self, who, text):
         self.chat_box.config(state="normal")
-        self.chat_box.insert("end", f"{who}:\n{text}\n\n")
-        self.chat_box.see("end"); self.chat_box.config(state="disabled")
+        self.chat_box.insert("end", f"{who}:\n")
+        for segment, style in markdown_segments(text):
+            tags = ("chat_bold",) if style == "bold" else ()
+            self.chat_box.insert("end", segment, tags)
+        self.chat_box.insert("end", "\n\n")
+        self.chat_box.see("end")
+        self.chat_box.config(state="disabled")
 
     def _set_thinking(self, active):
         self._thinking = bool(active)
@@ -574,12 +609,8 @@ class App(tk.Tk):
 
         def work():
             state_path = ROOT / ".hcs-update" / "state.json"
-            installed = None
-            try:
-                state = json.loads(state_path.read_text(encoding="utf-8"))
-                installed = str(state.get("installed_sha") or "").lower() or None
-            except Exception:
-                pass
+            state = read_update_state(state_path)
+            installed = str(state.get("installed_sha") or "").lower() or None
 
             latest = None
             try:
