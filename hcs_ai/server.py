@@ -212,7 +212,18 @@ def chat(inp: ChatIn):
             return llm_chat(inp.message, inp.history, inp.use_kb)
 
         cfg = load_config()
-        messages = [{"role": "system", "content": cfg["app"]["system_prompt"]}]
+        context = ""
+        if inp.use_kb:
+            hits = kb_search(inp.message, limit=4)
+            if hits:
+                context = "\n\nLOCAL KNOWLEDGE CONTEXT:\n" + "\n\n".join(
+                    f"[{hit['source']} #{hit['chunk_index']}]\n{hit['text']}"
+                    for hit in hits
+                )
+        messages = [{
+            "role": "system",
+            "content": cfg["app"]["system_prompt"] + context,
+        }]
         messages.extend(inp.history[-12:])
         messages.append({"role": "user", "content": inp.message})
         result = cloud_router.chat(inp.task_id, messages)
