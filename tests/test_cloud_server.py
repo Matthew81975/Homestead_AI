@@ -28,7 +28,7 @@ def test_live_chat_uses_cloud_router(monkeypatch):
             "approval_required": False,
         },
     )
-    response = client.post("/chat", json={"message": "hi", "history": [], "task_id": "t2"})
+    response = client.post("/chat", json={"message": "hi", "history": [], "use_kb": False, "task_id": "t2"})
     body = response.json()
     assert body["text"] == "cloud"
     assert body["provider"] == "p1"
@@ -101,7 +101,7 @@ def test_live_chat_audits_each_route_event(monkeypatch):
             ],
         },
     )
-    response = client.post("/chat", json={"message": "hi", "history": [], "task_id": "t-events"})
+    response = client.post("/chat", json={"message": "hi", "history": [], "use_kb": False, "task_id": "t-events"})
     assert response.status_code == 200
     route_audits = [detail for kind, detail in events if kind == "cloud_route_event"]
     assert len(route_audits) == 2
