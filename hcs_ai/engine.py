@@ -24,6 +24,13 @@ def _resolve(path_value):
     return path if path.is_absolute() else ROOT / path
 
 
+def _file_status(path):
+    try:
+        return path.is_file(), None
+    except OSError as exc:
+        return False, str(exc)
+
+
 def _available_port(host, first, attempts=100):
     for port in range(int(first), min(int(first) + int(attempts), 65536)):
         try:
@@ -77,6 +84,8 @@ def status():
     phase = state.get("phase")
     if not phase:
         phase = "ready" if ready else ("starting" if running else "stopped")
+    executable_found, executable_error = _file_status(exe)
+    model_found, model_error = _file_status(model)
     return {
         "backend": cfg.get("backend", "external"),
         "running": running,
@@ -87,9 +96,11 @@ def status():
         "pid": _process.pid if running else state.get("pid"),
         "port": state.get("port"),
         "executable": str(exe),
-        "executable_found": exe.is_file(),
+        "executable_found": executable_found,
+        "executable_error": executable_error,
         "model_path": str(model),
-        "model_found": model.is_file(),
+        "model_found": model_found,
+        "model_error": model_error,
         "command": state.get("command"),
         "auto_start": bool(cfg.get("auto_start", True)),
         "log_path": str(LOG_PATH),
