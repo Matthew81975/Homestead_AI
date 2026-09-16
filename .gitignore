@@ -15,6 +15,7 @@ models/
 
 # Local databases and generated data
 data/
+data/local_codex/
 *.db
 *.sqlite
 *.sqlite3
@@ -43,3 +44,6 @@ Desktop.ini
 
 # Downloaded/compiled runtime dependencies
 runtime/llama.cpp/
+
+# Isolated feature worktrees
+.worktrees/

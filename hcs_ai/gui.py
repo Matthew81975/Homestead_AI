@@ -12,6 +12,7 @@ from pathlib import Path
 from .config import ROOT, load_config, update_local_config
 from .speech import SpeechEngine
 from .ports import port_candidates, saved_endpoint
+from .gui_local_codex import LOCAL_CODEX_TAB_TITLE, LocalCodexGuiMixin
 
 BASE = None
 
@@ -77,9 +78,10 @@ def api(method, path, data=None, timeout=180):
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode("utf-8"))
 
-class App(tk.Tk):
-    def __init__(self):
+class App(LocalCodexGuiMixin, tk.Tk):
+    def __init__(self, local_codex_service=None):
         super().__init__()
+        self.local_codex_service = local_codex_service
         self.title("HCS-AI v0.7.1 — Self-Contained Local AI")
         self.geometry("1050x720")
         self.history = []
@@ -97,12 +99,12 @@ class App(tk.Tk):
 
         self.tabs = ttk.Notebook(self.workspace_pane)
         self.chat_tab = ttk.Frame(self.workspace_pane)
-        self.kb_tab, self.hkr_tab, self.ext_tab, self.mem_tab, self.mcp_tab, self.sys_tab = [
-            ttk.Frame(self.tabs) for _ in range(6)
+        self.kb_tab, self.hkr_tab, self.ext_tab, self.mem_tab, self.mcp_tab, self.local_codex_tab, self.sys_tab = [
+            ttk.Frame(self.tabs) for _ in range(7)
         ]
         for frame, title in zip(
-            [self.kb_tab, self.hkr_tab, self.ext_tab, self.mem_tab, self.mcp_tab, self.sys_tab],
-            ["Knowledge Base", "HKR Librarian", "External Library", "Memory", "MCP", "System"],
+            [self.kb_tab, self.hkr_tab, self.ext_tab, self.mem_tab, self.mcp_tab, self.local_codex_tab, self.sys_tab],
+            ["Knowledge Base", "HKR Librarian", "External Library", "Memory", "MCP", LOCAL_CODEX_TAB_TITLE, "System"],
         ):
             self.tabs.add(frame, text=title)
 
@@ -110,7 +112,7 @@ class App(tk.Tk):
         self.workspace_pane.add(self.chat_tab, weight=1)
 
         self.build_chat()
-        self.build_kb(); self.build_hkr(); self.build_external(); self.build_memory(); self.build_mcp(); self.build_system()
+        self.build_kb(); self.build_hkr(); self.build_external(); self.build_memory(); self.build_mcp(); self.build_local_codex(); self.build_system()
         self.after(80, self._set_ai_console_normal)
         self.after(300, self.check_server)
         self.after(1200, self._refresh_git_update_status)

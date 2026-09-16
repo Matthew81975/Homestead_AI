@@ -22,4 +22,5 @@ def test_managed_llama_cpp_forces_auto_model(monkeypatch, tmp_path: Path):
 
 
 def test_desktop_home_maps_window_close_to_full_exit():
-    assert desktop_home.desktop_host.DesktopHost.hide_window is desktop_home.desktop_host.DesktopHost.exit
+    assert desktop_home.DesktopHost.hide_window is desktop_home.DesktopHost.exit
+    assert desktop_home.desktop_host.DesktopHost.hide_window is not desktop_home.desktop_host.DesktopHost.exit

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-__version__ = "0.5.0"
+__version__ = "0.11.0"
 
 _OLD_LLAMA_RELEASE_LOOKUP = '''    $release = Invoke-RestMethod -Headers @{"User-Agent"="HCS-AI-Installer"} `
         -Uri "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"

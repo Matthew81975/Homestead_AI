@@ -1,0 +1,16 @@
+HCS-AI 0.11.0 — Native Local Codex
+===================================
+
+- Integrates Local Codex 2.10.8 as an HCS-owned worker instead of a separate
+  terminal application.
+- Adds a full Local Codex tab with workspace selection, prompts, task controls,
+  approvals, status, and a searchable live log.
+- Copies compatible standalone state during a safe, one-time migration. The
+  standalone installation remains untouched for rollback.
+- Supervises crashes, heartbeat loss, cooperative stopping, and full worker
+  process-tree cleanup on HCS exit or restart.
+- Preserves Local Codex workspace and action safety boundaries and keeps
+  credentials out of tracked configuration, migration receipts, and logs.
+
+Known first-release limit: Local Codex runs one task at a time. Submit another
+task after the active task completes, stops, or becomes resumable.

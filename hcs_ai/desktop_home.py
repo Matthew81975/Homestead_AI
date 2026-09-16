@@ -1,12 +1,29 @@
+import argparse
+
 from . import desktop_host
 from .gui_diagnostics import App
 
-# Reuse the existing tray/update/process-management host, replacing only the GUI
-# class it instantiates. Closing the visible GUI now means Exit HCS; minimizing
-# to the tray remains available through the tray/startup workflow itself.
-desktop_host.App = App
-desktop_host.DesktopHost.hide_window = desktop_host.DesktopHost.exit
+
+class DesktopHost(desktop_host.DesktopHost):
+    """Home launcher policy: closing its visible window fully exits HCS."""
+
+    hide_window = desktop_host.DesktopHost.exit
+
+    def run(self):
+        original = desktop_host.App
+        desktop_host.App = App
+        try:
+            return super().run()
+        finally:
+            desktop_host.App = original
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--minimized", action="store_true")
+    args = parser.parse_args()
+    DesktopHost(minimized=args.minimized).run()
 
 
 if __name__ == "__main__":
-    desktop_host.main()
+    main()

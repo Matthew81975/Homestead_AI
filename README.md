@@ -1,3 +1,28 @@
+# HCS-AI v0.11.0 — Local Codex Integration
+
+Local Codex 2.10.8 is now a native, supervised HCS subsystem. Open the Local Codex tab
+to select a registered workspace, enter a prompt, start a new task,
+or use **Stop** and **Resume**. Only one task runs at a time. When task review is
+required, the approval strip displays explicit **Approve** and **Deny** controls; existing
+workspace, command, commit, push, deletion, and credential safeguards remain in
+force.
+
+The first migration copies compatible settings, workspace registrations, task
+state, and journals from the newest configured standalone Local Codex folder.
+Migration never modifies that folder. Its receipt is stored under
+`data/local_codex/migration/receipt.json`, and HCS-owned state becomes
+authoritative after the receipt is complete.
+
+The live log supports Follow, Pause Scroll, search highlighting, **Clear View**,
+and **Open Log Folder**. Clear View clears only the display; it never deletes
+persistent logs. Closing the standard window to the tray leaves Local Codex
+running. A full exit or HCS restart stops the Local Codex worker and its child
+processes before stopping the HCS server.
+
+For rollback, fully exit HCS 0.11.0 and launch the untouched standalone Local
+Codex folder. Because migration is copy-only, no reverse migration is needed.
+See `docs/LOCAL_CODEX_WINDOWS_SMOKE_TEST.md` for the release validation steps.
+
 # HCS-AI v0.6 — HKR Algorithm Library
 
 ## v0.7 — Self-contained inference

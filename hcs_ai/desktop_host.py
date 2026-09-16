@@ -9,12 +9,13 @@ import time
 import urllib.request
 
 import psutil
-import pystray
 from PIL import Image, ImageDraw
 from tkinter import messagebox
 
 from .config import ROOT, load_config
 from .gui_tree import App
+from .local_codex.migration import migrate_legacy_install
+from .local_codex.service import LocalCodexService
 from .ports import STATE_PATH
 
 REPO_OWNER = "Matthew81975"
@@ -135,12 +136,37 @@ def terminate_process_tree(pid):
 
 class DesktopHost:
     def __init__(self, minimized=False):
+        config = load_config()
         self.minimized = minimized
         self.server = None
         self.icon = None
         self.app = None
+        self.local_codex = None
+        self.local_codex_startup_warning = None
         self.exiting = False
-        self.expected_version = str(load_config().get("app", {}).get("version", "0.0.0"))
+        self.expected_version = str(config.get("app", {}).get("version", "0.0.0"))
+        local_config = config.get("local_codex", {})
+        if local_config.get("enabled", True):
+            candidates = []
+            for value in local_config.get("legacy_candidates", ()):
+                path = Path(value).expanduser()
+                candidates.append(path if path.is_absolute() else ROOT / path)
+            try:
+                migrate_legacy_install(
+                    candidates=candidates,
+                    data_root=ROOT / "data",
+                    local_config_path=ROOT / "config.json",
+                )
+            except Exception as exc:
+                # Migration is best-effort and must never prevent HCS startup.
+                self.local_codex_startup_warning = f"Local Codex migration warning: {exc}"
+            try:
+                self.local_codex = LocalCodexService(
+                    data_root=ROOT / "data" / "local_codex",
+                    config=local_config,
+                )
+            except Exception as exc:
+                self.local_codex_startup_warning = f"Local Codex startup warning: {exc}"
 
     def start_server(self):
         try:
@@ -238,6 +264,17 @@ class DesktopHost:
         self._finish_exit()
 
     def _stop_children(self):
+        if self.local_codex:
+            try:
+                self.local_codex.shutdown(grace_seconds=0)
+            except Exception:
+                pass
+            try:
+                worker_pid = self.local_codex.status().get("pid")
+            except Exception:
+                worker_pid = None
+            if worker_pid:
+                terminate_process_tree(worker_pid)
         if self.server and self.server.poll() is None:
             terminate_process_tree(self.server.pid)
 
@@ -254,6 +291,9 @@ class DesktopHost:
                 pass
 
     def build_tray(self):
+        # Import lazily so diagnostics/tests and non-desktop consumers can load
+        # lifecycle helpers without requiring an active graphical display.
+        import pystray
         menu = pystray.Menu(
             pystray.MenuItem("Open HCS", self.open_window, default=True),
             pystray.MenuItem("Check for Updates", self.check_for_updates),
@@ -274,7 +314,14 @@ class DesktopHost:
 
         self.start_server()
         _base, health = self.wait_for_server()
-        self.app = App()
+        if self.local_codex:
+            try:
+                self.local_codex.start()
+            except Exception as exc:
+                self.local_codex_startup_warning = f"Local Codex startup warning: {exc}"
+        self.app = App(local_codex_service=self.local_codex)
+        if self.local_codex_startup_warning:
+            self.app._append_local_codex_log(self.local_codex_startup_warning, "warning")
         self.app.title(f"HCS-AI {health.get('version', self.expected_version)}")
         self.app.protocol("WM_DELETE_WINDOW", self.hide_window)
         self.build_tray()

@@ -3,7 +3,7 @@ Set-Location $PSScriptRoot
 $installLog = Join-Path $PSScriptRoot "install.log"
 Start-Transcript -Path $installLog -Append | Out-Null
 
-Write-Host "HCS-AI v0.8 installer"
+Write-Host "HCS-AI v0.11.0 installer"
 Write-Host "---------------------"
 
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
