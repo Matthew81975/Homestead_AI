@@ -151,6 +151,9 @@ class DesktopHost:
             for value in local_config.get("legacy_candidates", ()):
                 path = Path(value).expanduser()
                 candidates.append(path if path.is_absolute() else ROOT / path)
+            for desktop_root in (Path.home() / "Desktop", Path.home() / "OneDrive" / "Desktop"):
+                if desktop_root not in candidates:
+                    candidates.append(desktop_root)
             try:
                 migrate_legacy_install(
                     candidates=candidates,
@@ -312,34 +315,35 @@ class DesktopHost:
         except Exception:
             pass
 
-        self.start_server()
-        _base, health = self.wait_for_server()
-        if self.local_codex:
-            try:
-                self.local_codex.start()
-            except Exception as exc:
-                self.local_codex_startup_warning = f"Local Codex startup warning: {exc}"
-        self.app = App(local_codex_service=self.local_codex)
-        if self.local_codex_startup_warning:
-            self.app._append_local_codex_log(self.local_codex_startup_warning, "warning")
-        self.app.title(f"HCS-AI {health.get('version', self.expected_version)}")
-        self.app.protocol("WM_DELETE_WINDOW", self.hide_window)
-        self.build_tray()
-
-        if self.minimized:
-            self.app.withdraw()
-        else:
-            self._show_window()
-        self.app.mainloop()
-
-        if not self.exiting:
-            self.exiting = True
-            self._stop_children()
-            if self.icon:
+        try:
+            self.start_server()
+            _base, health = self.wait_for_server()
+            if self.local_codex:
                 try:
-                    self.icon.stop()
-                except Exception:
-                    pass
+                    self.local_codex.start()
+                except Exception as exc:
+                    self.local_codex_startup_warning = f"Local Codex startup warning: {exc}"
+            self.app = App(local_codex_service=self.local_codex)
+            if self.local_codex_startup_warning:
+                self.app._append_local_codex_log(self.local_codex_startup_warning, "warning")
+            self.app.title(f"HCS-AI {health.get('version', self.expected_version)}")
+            self.app.protocol("WM_DELETE_WINDOW", self.hide_window)
+            self.build_tray()
+
+            if self.minimized:
+                self.app.withdraw()
+            else:
+                self._show_window()
+            self.app.mainloop()
+        finally:
+            if not self.exiting:
+                self.exiting = True
+                self._stop_children()
+                if self.icon:
+                    try:
+                        self.icon.stop()
+                    except Exception:
+                        pass
 
 
 def main():
