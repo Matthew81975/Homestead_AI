@@ -42,6 +42,13 @@ def quantization_from_name(name: str) -> str | None:
     return match.group(1).upper() if match else None
 
 
+def _safe_resolve(path: Path) -> Path | None:
+    try:
+        return path.resolve()
+    except OSError:
+        return None
+
+
 def _compatibility(size_bytes: int) -> dict[str, Any]:
     vm = psutil.virtual_memory()
     estimated = int(size_bytes * 1.25 + 512 * 1024 ** 2)
@@ -58,6 +65,7 @@ def list_local_models() -> list[dict[str, Any]]:
     active = Path(load_config().get("inference", {}).get("model_path") or "").expanduser()
     if active and not active.is_absolute():
         active = ROOT / active
+    active_resolved = _safe_resolve(active) if active else None
     perf = {row["model"]: row for row in model_summary()}
     out: list[dict[str, Any]] = []
     for path in sorted(models_dir().rglob("*.gguf"), key=lambda p: p.name.lower()):
@@ -65,21 +73,24 @@ def list_local_models() -> list[dict[str, Any]]:
             stat = path.stat()
         except OSError:
             continue
+        resolved = _safe_resolve(path)
+        if resolved is None:
+            continue
         meta = _read_meta(path)
         entry = {
             "name": path.name,
-            "path": str(path.resolve()),
+            "path": str(resolved),
             "size_bytes": stat.st_size,
             "format": "GGUF",
             "quantization": quantization_from_name(path.name),
-            "active": bool(active) and path.resolve() == active.resolve(),
+            "active": active_resolved is not None and resolved == active_resolved,
             "source_repo": meta.get("repo_id"),
             "source_file": meta.get("filename"),
             "sha256": meta.get("sha256"),
             "downloaded_at": meta.get("downloaded_at"),
             "compatibility": _compatibility(stat.st_size),
         }
-        p = perf.get(str(path.resolve())) or perf.get(path.name)
+        p = perf.get(str(resolved)) or perf.get(path.name)
         if p:
             entry["performance"] = p
         out.append(entry)
