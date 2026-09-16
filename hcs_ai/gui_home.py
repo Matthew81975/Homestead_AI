@@ -19,8 +19,8 @@ def insert_home_tab(notebook, frame) -> None:
 class App(TreeApp):
     """Knowledge-tree GUI plus the integrated Matt's Laboratory homepage."""
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, local_codex_service=None):
+        super().__init__(local_codex_service=local_codex_service)
         notebook = getattr(self, "tabs", None)
         if notebook is None:
             raise RuntimeError("HCS top-level notebook was not found.")
