@@ -9,7 +9,6 @@
     "RELEASE_NOTES_v0.10.0.txt",
     "RELEASE_NOTES_v0.11.0.txt",
     "docs/LOCAL_CODEX_WINDOWS_SMOKE_TEST.md",
-    "install.ps1",
     "homepage/index.html",
     "hcs_ai/__init__.py",
     "hcs_ai/config.py",
