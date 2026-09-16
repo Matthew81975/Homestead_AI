@@ -172,8 +172,8 @@ def format_status_text(snapshot: TelemetrySnapshot, development_mode: bool) -> s
 class App(gui_recent.App):
     """Final HCS GUI layer providing development-only observability."""
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, local_codex_service=None):
+        super().__init__(local_codex_service=local_codex_service)
         self.title("HCS-AI 0.10.0")
         self.diagnostics = DIAGNOSTICS
         self._notebook = getattr(self, "tabs", None)
