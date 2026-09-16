@@ -24,6 +24,15 @@ def test_format_provider_fallback_uses_provider_tag():
     assert tag == "provider"
 
 
+def test_worker_heartbeat_is_not_rendered_in_the_visible_log():
+    from hcs_ai.gui_local_codex import format_local_codex_event
+
+    text, tag = format_local_codex_event(make_event(5, "worker_heartbeat"))
+
+    assert text == ""
+    assert tag == "normal"
+
+
 def test_local_codex_tab_title_and_controls_are_declared():
     from hcs_ai.gui_local_codex import LOCAL_CODEX_TAB_TITLE, REQUIRED_CONTROL_NAMES
 
