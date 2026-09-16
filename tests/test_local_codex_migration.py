@@ -96,6 +96,15 @@ def test_discovery_selects_highest_valid_semantic_version(tmp_path):
     assert discover_legacy_install(list(tmp_path.iterdir())) == newest
 
 
+def test_discovery_finds_install_nested_below_a_configured_desktop_root(tmp_path):
+    nested = make_legacy(
+        tmp_path / "Matt's Lab" / "Ai" / "Git" / "Local_Codex_Agent_v2.10.8",
+        version="2.10.8",
+    )
+
+    assert discover_legacy_install([tmp_path]) == nested
+
+
 def test_migration_is_idempotent_and_never_modifies_source(tmp_path):
     """A second startup must retain the standalone installation as a rollback copy."""
     source = make_legacy(tmp_path / "legacy", complete=True)
@@ -136,6 +145,27 @@ def test_absent_source_creates_a_completed_empty_receipt(tmp_path):
     assert result.skipped is False
     assert result.imported_categories == []
     assert read_json(tmp_path / "data" / "local_codex" / "migration" / "receipt.json")["status"] == "completed"
+
+
+def test_empty_receipt_is_retried_when_a_legacy_install_appears_later(tmp_path):
+    data_root = tmp_path / "data"
+    candidate_root = tmp_path / "Desktop"
+    migrate_legacy_install(
+        candidates=[candidate_root],
+        data_root=data_root,
+        local_config_path=tmp_path / "config.json",
+    )
+    source = make_legacy(candidate_root / "Local_Codex_Agent_v2.10.8", complete=True)
+
+    result = migrate_legacy_install(
+        candidates=[candidate_root],
+        data_root=data_root,
+        local_config_path=tmp_path / "config.json",
+    )
+
+    assert result.skipped is False
+    assert result.source_path == source
+    assert "workspaces" in result.imported_categories
 
 
 def test_partial_and_corrupt_categories_do_not_block_valid_imports(tmp_path):
