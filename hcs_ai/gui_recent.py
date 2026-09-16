@@ -70,8 +70,8 @@ def _human_bytes(value: int | None) -> str:
 class App(HomeApp):
     """HCS GUI with model management, performance telemetry, and Prompt Functions."""
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, local_codex_service=None):
+        super().__init__(local_codex_service=local_codex_service)
         self.title("HCS-AI v0.10 — Models + Prompt Functions")
         notebook = getattr(self, "tabs", None)
         if notebook is None:
