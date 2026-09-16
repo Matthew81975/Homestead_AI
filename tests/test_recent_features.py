@@ -80,6 +80,28 @@ class ModelManagerTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     model_manager.delete_model(str(outside))
 
+    def test_listing_models_survives_inaccessible_active_model_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            managed = Path(tmp) / "models"
+            managed.mkdir()
+            (managed / "available-Q4_K_M.gguf").write_bytes(b"gguf")
+            original_resolve = Path.resolve
+
+            def inaccessible_active(path, *args, **kwargs):
+                if str(path) == "/inaccessible-model.gguf":
+                    raise OSError(1005, "The volume does not contain a recognized file system")
+                return original_resolve(path, *args, **kwargs)
+
+            with mock.patch.object(model_manager, "MODELS_DIR", managed), \
+                 mock.patch.object(model_manager, "load_config", return_value={
+                     "inference": {"model_path": "/inaccessible-model.gguf"}
+                 }), \
+                 mock.patch.object(Path, "resolve", inaccessible_active):
+                rows = model_manager.list_local_models()
+
+            self.assertEqual([row["name"] for row in rows], ["available-Q4_K_M.gguf"])
+            self.assertFalse(rows[0]["active"])
+
 
 if __name__ == "__main__":
     unittest.main()
