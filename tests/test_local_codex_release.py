@@ -43,6 +43,15 @@ def test_installer_and_updater_preserve_machine_local_state():
     assert "update_manifest.json" in updater
 
 
+def test_update_manifest_never_replaces_protected_maintenance_files():
+    manifest = json.loads((ROOT / "update_manifest.json").read_text(encoding="utf-8"))
+    protected = {
+        "config.json", "update_hcs.ps1", "install.ps1", "install.bat",
+        "setup_internal_ai.ps1", "BOOTSTRAP_SELF_UPDATE.bat",
+    }
+    assert protected.isdisjoint(manifest["files"])
+
+
 def test_release_documentation_covers_operation_rollback_and_smoke_test():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     notes = (ROOT / "RELEASE_NOTES_v0.11.0.txt").read_text(encoding="utf-8")
