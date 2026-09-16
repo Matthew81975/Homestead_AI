@@ -105,10 +105,10 @@ def format_local_codex_event(event):
             event.level, "normal"
         )
         return _payload(event, "message", str(dict(payload))), tag
+    if kind in {"heartbeat", "worker_heartbeat", "status_snapshot"}:
+        return "", "normal"
     if kind.startswith("worker_"):
         return kind.replace("_", " ").capitalize(), "normal"
-    if kind in {"heartbeat", "status_snapshot"}:
-        return "", "normal"
     return _payload(event, "message", kind.replace("_", " ").capitalize()), "normal"
 
 
