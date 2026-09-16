@@ -61,7 +61,7 @@ def _version_key(version: str) -> tuple[int, int, int]:
 
 
 def _candidate_paths(candidates: Iterable[Path]) -> list[Path]:
-    """Accept configured installs and parent folders containing sibling installs."""
+    """Accept configured installs and bounded desktop trees containing installs."""
     found: dict[Path, None] = {}
     for raw_candidate in candidates:
         candidate = Path(raw_candidate).expanduser()
@@ -75,12 +75,21 @@ def _candidate_paths(candidates: Iterable[Path]) -> list[Path]:
         )
         if not scan_root.is_dir():
             continue
-        try:
-            for child in scan_root.iterdir():
-                if child.is_dir() and child.name.lower().startswith("local_codex_agent_v"):
+        pending = [(scan_root, 0)]
+        while pending:
+            directory, depth = pending.pop()
+            try:
+                children = list(directory.iterdir())
+            except OSError:
+                continue
+            for child in children:
+                if not child.is_dir() or child.is_symlink():
+                    continue
+                if child.name.lower().startswith("local_codex_agent_v"):
                     found[child] = None
-        except OSError:
-            continue
+                    continue
+                if depth < 4 and not child.name.startswith("."):
+                    pending.append((child, depth + 1))
     return list(found)
 
 
@@ -305,7 +314,11 @@ def migrate_legacy_install(
             receipt = _read_json(receipt_path)
         except (OSError, TypeError, ValueError, json.JSONDecodeError):
             receipt = None
-        if isinstance(receipt, dict) and receipt.get("status") == "completed":
+        if (
+            isinstance(receipt, dict)
+            and receipt.get("status") == "completed"
+            and receipt.get("source_path")
+        ):
             return _receipt_result(receipt)
 
     warnings: list[str] = []
