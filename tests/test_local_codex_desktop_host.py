@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pytest
+
 import hcs_ai.desktop_host as desktop_host
 
 
@@ -201,3 +203,24 @@ def test_local_codex_startup_failure_leaves_hcs_gui_usable(monkeypatch):
     assert created == ["created"]
     assert host.app.local_codex_service is host.local_codex
     assert host.app.logs == [("Local Codex startup warning: worker unavailable", "warning")]
+
+
+def test_gui_construction_failure_stops_started_children(monkeypatch):
+    order = []
+    monkeypatch.setattr(desktop_host, "load_config", lambda: configured(False))
+    host = desktop_host.DesktopHost()
+    host.local_codex = FakeLocalCodex(order, pid=None)
+    host.start_server = lambda: order.append("server_start")
+    host.wait_for_server = lambda: ("http://127.0.0.1:8000", {"version": "0.11.0"})
+    host._stop_children = lambda: order.append("children_stopped")
+
+    def broken_app(*, local_codex_service=None):
+        order.append("app_failed")
+        raise RuntimeError("GUI unavailable")
+
+    monkeypatch.setattr(desktop_host, "App", broken_app)
+
+    with pytest.raises(RuntimeError, match="GUI unavailable"):
+        host.run()
+
+    assert order == ["server_start", "local_codex_start", "app_failed", "children_stopped"]
