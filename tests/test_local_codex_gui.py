@@ -1,4 +1,5 @@
 from pathlib import Path
+import inspect
 
 import pytest
 
@@ -105,3 +106,12 @@ def test_clear_view_does_not_delete_persistent_log(tmp_path):
 def test_gui_layer_never_imports_action_executor():
     module = Path(__file__).parents[1] / "hcs_ai" / "gui_local_codex.py"
     assert "ActionExecutor" not in module.read_text(encoding="utf-8")
+
+
+def test_every_concrete_gui_layer_accepts_local_codex_service():
+    from hcs_ai.gui_home import App as HomeApp
+    from hcs_ai.gui_recent import App as RecentApp
+    from hcs_ai.gui_diagnostics import App as DiagnosticsApp
+
+    for app_class in (HomeApp, RecentApp, DiagnosticsApp):
+        assert "local_codex_service" in inspect.signature(app_class.__init__).parameters
