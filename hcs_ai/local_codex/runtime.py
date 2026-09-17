@@ -62,7 +62,10 @@ def build_controller(
     client = make_client(config, status_callback=status)
     workspace_config = _workspace_config(Path(workspaces_config_path), workspace_path)
     project_control = (
-        ProjectControlClient(workspace_config.control_api_url)
+        ProjectControlClient(
+            workspace_config.control_api_url,
+            discovery_path=workspace_path / ".maze_world_control.json",
+        )
         if workspace_config is not None and workspace_config.control_api_url
         else None
     )
