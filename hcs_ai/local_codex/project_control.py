@@ -3,8 +3,10 @@ from __future__ import annotations
 import base64
 import json
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable
 from urllib import error, request
+from urllib.parse import urlparse
 
 
 class ProjectControlError(RuntimeError):
@@ -26,6 +28,7 @@ class ProjectControlClient:
         *,
         opener: Callable[..., Any] = request.urlopen,
         timeout: float = 10.0,
+        discovery_path: Path | None = None,
     ) -> None:
         value = base_url.strip().rstrip("/")
         if not value:
@@ -33,9 +36,36 @@ class ProjectControlClient:
         self.base_url = value
         self.opener = opener
         self.timeout = timeout
+        self.discovery_path = Path(discovery_path) if discovery_path is not None else None
+
+    def _discovered_base_url(self) -> str | None:
+        path = self.discovery_path
+        if path is None:
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            value = payload.get("url")
+        except (OSError, json.JSONDecodeError, AttributeError):
+            return None
+        if not isinstance(value, str):
+            return None
+        value = value.strip().rstrip("/")
+        try:
+            parsed = urlparse(value)
+            port = parsed.port
+        except ValueError:
+            return None
+        if (
+            parsed.scheme != "http"
+            or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}
+            or port is None
+        ):
+            return None
+        return value
 
     def _url(self, path: str) -> str:
-        return f"{self.base_url}{path}"
+        base_url = self._discovered_base_url() or self.base_url
+        return f"{base_url}{path}"
 
     @staticmethod
     def _content_type(response) -> str:
@@ -51,7 +81,13 @@ class ProjectControlClient:
         except (error.URLError, TimeoutError, OSError) as exc:
             raise ProjectControlError(f"project control request failed: {exc}") from exc
 
-    def _request_json(self, path: str, *, method: str = "GET", payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    def _request_json(
+        self,
+        path: str,
+        *,
+        method: str = "GET",
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         data = None
         headers = {"Accept": "application/json"}
         if payload is not None:
@@ -74,7 +110,11 @@ class ProjectControlClient:
     def get_ui_state(self) -> dict[str, Any]:
         return self._request_json("/v1/ui")
 
-    def send_command(self, command: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+    def send_command(
+        self,
+        command: str,
+        arguments: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         name = command.strip()
         if not name:
             raise ValueError("command is required")
@@ -85,7 +125,11 @@ class ProjectControlClient:
         )
 
     def get_screenshot(self) -> ProjectScreenshot:
-        req = request.Request(self._url("/v1/screenshot"), headers={"Accept": "image/*, application/json"}, method="GET")
+        req = request.Request(
+            self._url("/v1/screenshot"),
+            headers={"Accept": "image/*, application/json"},
+            method="GET",
+        )
         with self._open(req) as response:
             body = response.read()
             media_type = self._content_type(response)
