@@ -12,3 +12,4 @@ packaging>=24.1
 pystray>=0.19.5
 Pillow>=10.4
 tkinterweb>=4.3
+mcp>=2.1.1,<3
