@@ -8,11 +8,10 @@ from .presentation import LOCAL_CODEX_TAB_TITLE
 
 
 def build_local_codex_tab(host: Any, _frame: Any, services: ServiceContainer) -> None:
-    """Attach the HCS-owned Local Codex service and build its existing UI.
+    """Attach the HCS-owned Local Codex service and build its feature-owned UI.
 
-    The current LocalCodexGuiMixin remains intact during the first migration
-    step. Future Local Codex UI work can move into this package without
-    changing the HCS shell's tab composition code.
+    The shell knows only the tab contract and shared service container; Local
+    Codex view/controller details remain inside this feature package.
     """
 
     host.local_codex_service = services.get("local_codex")
