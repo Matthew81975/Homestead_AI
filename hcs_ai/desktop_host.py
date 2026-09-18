@@ -322,6 +322,8 @@ class DesktopHost:
             self.start_server()
             _base, health = self.wait_for_server()
             if self.local_codex:
+                if self.services.get("local_codex") is not self.local_codex:
+                    self.services.register("local_codex", self.local_codex, replace=True)
                 try:
                     self.local_codex.start()
                 except Exception as exc:
