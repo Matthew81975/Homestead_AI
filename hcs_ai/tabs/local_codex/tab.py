@@ -4,7 +4,7 @@ from typing import Any
 
 from ...core.services import ServiceContainer
 from ...core.tabs import TabDefinition
-from ...gui_local_codex import LOCAL_CODEX_TAB_TITLE
+from .presentation import LOCAL_CODEX_TAB_TITLE
 
 
 def build_local_codex_tab(host: Any, _frame: Any, services: ServiceContainer) -> None:
