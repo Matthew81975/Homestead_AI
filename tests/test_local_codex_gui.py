@@ -124,3 +124,33 @@ def test_every_concrete_gui_layer_accepts_local_codex_service():
 
     for app_class in (HomeApp, RecentApp, DiagnosticsApp):
         assert "local_codex_service" in inspect.signature(app_class.__init__).parameters
+
+
+
+def test_local_codex_gui_implementation_lives_in_feature_package():
+    import hcs_ai.gui_local_codex as legacy
+    from hcs_ai.tabs.local_codex import (
+        LocalCodexControllerMixin,
+        LocalCodexGuiMixin,
+        LocalCodexViewMixin,
+    )
+
+    assert legacy.LocalCodexGuiMixin is LocalCodexGuiMixin
+    assert legacy.LocalCodexControllerMixin is LocalCodexControllerMixin
+    assert legacy.LocalCodexViewMixin is LocalCodexViewMixin
+
+    legacy_source = Path(legacy.__file__).read_text(encoding="utf-8")
+    assert "class LocalCodexGuiMixin" not in legacy_source
+    assert "tkinter as tk" not in legacy_source
+
+
+def test_local_codex_presentation_helpers_are_importable_without_legacy_module():
+    from hcs_ai.tabs.local_codex.presentation import (
+        local_codex_control_states,
+        should_follow_local_codex_log,
+    )
+
+    assert should_follow_local_codex_log(True, False)
+    assert local_codex_control_states(
+        {"worker_state": "running", "task_state": "idle"}
+    )["new_task"]
