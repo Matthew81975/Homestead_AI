@@ -10,9 +10,11 @@ import threading
 import uuid
 from pathlib import Path
 from .config import ROOT, load_config, update_local_config
+from .core.services import ServiceContainer
+from .core.tabs import TabRegistry, method_tab
 from .speech import SpeechEngine
 from .ports import port_candidates, saved_endpoint
-from .gui_local_codex import LOCAL_CODEX_TAB_TITLE, LocalCodexGuiMixin
+from .tabs.local_codex import LOCAL_CODEX_TAB, LocalCodexGuiMixin
 
 BASE = None
 
@@ -78,10 +80,31 @@ def api(method, path, data=None, timeout=180):
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode("utf-8"))
 
+def default_tab_registry() -> TabRegistry:
+    """Return the ordered top-level tab composition for the HCS shell.
+
+    Legacy build_* methods are adapted here while each tab is migrated into its
+    own package. Local Codex is the first independently registered feature tab.
+    """
+
+    return TabRegistry([
+        method_tab("knowledge_base", "Knowledge Base", "kb_tab", "build_kb"),
+        method_tab("hkr", "HKR Librarian", "hkr_tab", "build_hkr"),
+        method_tab("external_library", "External Library", "ext_tab", "build_external"),
+        method_tab("memory", "Memory", "mem_tab", "build_memory"),
+        method_tab("mcp", "MCP", "mcp_tab", "build_mcp"),
+        LOCAL_CODEX_TAB,
+        method_tab("system", "System", "sys_tab", "build_system"),
+    ])
+
+
 class App(LocalCodexGuiMixin, tk.Tk):
-    def __init__(self, local_codex_service=None):
+    def __init__(self, local_codex_service=None, services=None):
         super().__init__()
-        self.local_codex_service = local_codex_service
+        self.services = services if services is not None else ServiceContainer()
+        if local_codex_service is not None:
+            self.services.register("local_codex", local_codex_service, replace=True)
+        self.local_codex_service = self.services.get("local_codex")
         self.title("HCS-AI v0.7.1 — Self-Contained Local AI")
         self.geometry("1050x720")
         self.history = []
@@ -99,20 +122,20 @@ class App(LocalCodexGuiMixin, tk.Tk):
 
         self.tabs = ttk.Notebook(self.workspace_pane)
         self.chat_tab = ttk.Frame(self.workspace_pane)
-        self.kb_tab, self.hkr_tab, self.ext_tab, self.mem_tab, self.mcp_tab, self.local_codex_tab, self.sys_tab = [
-            ttk.Frame(self.tabs) for _ in range(7)
-        ]
-        for frame, title in zip(
-            [self.kb_tab, self.hkr_tab, self.ext_tab, self.mem_tab, self.mcp_tab, self.local_codex_tab, self.sys_tab],
-            ["Knowledge Base", "HKR Librarian", "External Library", "Memory", "MCP", LOCAL_CODEX_TAB_TITLE, "System"],
-        ):
-            self.tabs.add(frame, text=title)
+        self.tab_registry = default_tab_registry()
+        self.tab_frames = {}
+        for definition in self.tab_registry:
+            frame = ttk.Frame(self.tabs)
+            setattr(self, definition.frame_attr, frame)
+            self.tab_frames[definition.tab_id] = frame
+            self.tabs.add(frame, text=definition.title)
 
         self.workspace_pane.add(self.tabs, weight=4)
         self.workspace_pane.add(self.chat_tab, weight=1)
 
         self.build_chat()
-        self.build_kb(); self.build_hkr(); self.build_external(); self.build_memory(); self.build_mcp(); self.build_local_codex(); self.build_system()
+        for definition in self.tab_registry:
+            definition.builder(self, self.tab_frames[definition.tab_id], self.services)
         self.after(80, self._set_ai_console_normal)
         self.after(300, self.check_server)
         self.after(1200, self._refresh_git_update_status)

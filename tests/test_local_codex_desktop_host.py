@@ -25,9 +25,14 @@ class FakeLocalCodex:
 
 
 class FakeApp:
-    def __init__(self, order, local_codex_service=None):
+    def __init__(self, order, local_codex_service=None, services=None):
         self.order = order
-        self.local_codex_service = local_codex_service
+        self.services = services
+        self.local_codex_service = (
+            local_codex_service
+            if local_codex_service is not None
+            else (services.get("local_codex") if services is not None else None)
+        )
         self.logs = []
 
     def _append_local_codex_log(self, message, tag):
@@ -144,8 +149,8 @@ def test_run_starts_worker_after_server_is_ready_and_passes_service_to_app(monke
     )
 
     class RunApp(FakeApp):
-        def __init__(self, local_codex_service=None):
-            super().__init__(order, local_codex_service)
+        def __init__(self, local_codex_service=None, services=None):
+            super().__init__(order, local_codex_service, services)
             order.append("app")
 
         def title(self, _value):
@@ -164,6 +169,7 @@ def test_run_starts_worker_after_server_is_ready_and_passes_service_to_app(monke
     host.run()
 
     assert order[:4] == ["server_start", "server_ready", "local_codex_start", "app"]
+    assert host.app.services is host.services
     assert host.app.local_codex_service is host.local_codex
 
 
@@ -181,8 +187,8 @@ def test_local_codex_startup_failure_leaves_hcs_gui_usable(monkeypatch):
     created = []
 
     class RunApp(FakeApp):
-        def __init__(self, local_codex_service=None):
-            super().__init__(created, local_codex_service)
+        def __init__(self, local_codex_service=None, services=None):
+            super().__init__(created, local_codex_service, services)
             created.append("created")
 
         def title(self, _value):
@@ -214,7 +220,7 @@ def test_gui_construction_failure_stops_started_children(monkeypatch):
     host.wait_for_server = lambda: ("http://127.0.0.1:8000", {"version": "0.11.0"})
     host._stop_children = lambda: order.append("children_stopped")
 
-    def broken_app(*, local_codex_service=None):
+    def broken_app(*, local_codex_service=None, services=None):
         order.append("app_failed")
         raise RuntimeError("GUI unavailable")
 

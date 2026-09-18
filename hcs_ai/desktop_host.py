@@ -13,6 +13,7 @@ from PIL import Image, ImageDraw
 from tkinter import messagebox
 
 from .config import ROOT, load_config
+from .core.services import ServiceContainer
 from .gui_tree import App
 from .local_codex.migration import migrate_legacy_install
 from .local_codex.service import LocalCodexService
@@ -141,6 +142,7 @@ class DesktopHost:
         self.server = None
         self.icon = None
         self.app = None
+        self.services = ServiceContainer()
         self.local_codex = None
         self.local_codex_startup_warning = None
         self.exiting = False
@@ -168,6 +170,7 @@ class DesktopHost:
                     data_root=ROOT / "data" / "local_codex",
                     config=local_config,
                 )
+                self.services.register("local_codex", self.local_codex)
             except Exception as exc:
                 self.local_codex_startup_warning = f"Local Codex startup warning: {exc}"
 
@@ -319,11 +322,13 @@ class DesktopHost:
             self.start_server()
             _base, health = self.wait_for_server()
             if self.local_codex:
+                if self.services.get("local_codex") is not self.local_codex:
+                    self.services.register("local_codex", self.local_codex, replace=True)
                 try:
                     self.local_codex.start()
                 except Exception as exc:
                     self.local_codex_startup_warning = f"Local Codex startup warning: {exc}"
-            self.app = App(local_codex_service=self.local_codex)
+            self.app = App(services=self.services)
             if self.local_codex_startup_warning:
                 self.app._append_local_codex_log(self.local_codex_startup_warning, "warning")
             self.app.title(f"HCS-AI {health.get('version', self.expected_version)}")

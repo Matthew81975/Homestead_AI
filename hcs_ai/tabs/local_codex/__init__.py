@@ -1,29 +1,26 @@
-"""Backward-compatible Local Codex GUI imports.
+"""Local Codex HCS feature package."""
 
-The Local Codex tab implementation now lives under
-`hcs_ai.tabs.local_codex`. Keep this module as a stable import path while
-older HCS layers and external callers migrate.
-"""
-
-from .tabs.local_codex import (
+from .controller import LocalCodexControllerMixin
+from .presentation import (
     LOCAL_CODEX_TAB_TITLE,
     REQUIRED_CONTROL_NAMES,
-    LocalCodexControllerMixin,
-    LocalCodexGuiMixin,
-    LocalCodexViewMixin,
     format_local_codex_event,
     local_codex_control_states,
     local_codex_search_ranges,
     ordered_local_codex_events,
     should_follow_local_codex_log,
 )
+from .tab import LOCAL_CODEX_TAB, build_local_codex_tab
+from .view import LocalCodexGuiMixin, LocalCodexViewMixin
 
 __all__ = [
+    "LOCAL_CODEX_TAB",
     "LOCAL_CODEX_TAB_TITLE",
     "REQUIRED_CONTROL_NAMES",
     "LocalCodexControllerMixin",
     "LocalCodexGuiMixin",
     "LocalCodexViewMixin",
+    "build_local_codex_tab",
     "format_local_codex_event",
     "local_codex_control_states",
     "local_codex_search_ranges",
