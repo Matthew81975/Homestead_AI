@@ -1,12 +1,53 @@
 from __future__ import annotations
 
+import importlib.util
 import os
 import queue
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
+import urllib.request
+from pathlib import Path
+
+from .config import ROOT
+
+
+VOICE_ASSET_URLS = (
+    "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/kokoro-v1.0.onnx",
+    "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/voices-v1.0.bin",
+)
+
+
+def natural_voice_asset_paths(root: Path = ROOT) -> tuple[Path, Path]:
+    folder = Path(root) / "runtime" / "voice"
+    return folder / "kokoro-v1.0.onnx", folder / "voices-v1.0.bin"
+
+
+def natural_voice_ready(root: Path = ROOT) -> bool:
+    return all(path.is_file() and path.stat().st_size > 0 for path in natural_voice_asset_paths(root))
+
+
+def download_natural_voice_assets(
+    root: Path = ROOT,
+    opener=urllib.request.urlopen,
+) -> tuple[Path, Path]:
+    paths = natural_voice_asset_paths(root)
+    paths[0].parent.mkdir(parents=True, exist_ok=True)
+    for url, destination in zip(VOICE_ASSET_URLS, paths):
+        partial = destination.with_suffix(destination.suffix + ".part")
+        try:
+            with opener(url, timeout=180) as response, partial.open("wb") as output:
+                shutil.copyfileobj(response, output)
+            if partial.stat().st_size <= 0:
+                raise OSError(f"Downloaded voice asset is empty: {destination.name}")
+            partial.replace(destination)
+        except Exception:
+            partial.unlink(missing_ok=True)
+            raise
+    return paths
 
 
 def clean_for_speech(text: str) -> str:
@@ -18,6 +59,27 @@ def clean_for_speech(text: str) -> str:
     value = value.replace("**", "").replace("__", "")
     value = re.sub(r"(?m)^\s{0,3}(?:#{1,6}\s+|[-*+]\s+|\d+[.)]\s+)", "", value)
     return re.sub(r"\s+", " ", value).strip()
+
+
+def sentence_chunks(text: str, max_chars: int = 240) -> list[str]:
+    """Group complete sentences into short chunks for lower-latency speech."""
+    value = str(text or "").strip()
+    if not value:
+        return []
+    sentences = re.findall(r".+?(?:[.!?](?=\s|$)|$)", value, flags=re.DOTALL)
+    chunks: list[str] = []
+    current = ""
+    for sentence in sentences:
+        sentence = re.sub(r"\s+", " ", sentence).strip()
+        candidate = f"{current} {sentence}".strip()
+        if current and len(candidate) > max_chars:
+            chunks.append(current)
+            current = sentence
+        else:
+            current = candidate
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 def native_speech_command() -> list[str] | None:
@@ -52,22 +114,118 @@ def run_speech_command(command: list[str], text: str) -> None:
     )
 
 
+def play_audio_samples(samples, sample_rate: int) -> None:
+    import soundfile as sf
+
+    handle = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    path = Path(handle.name)
+    handle.close()
+    try:
+        sf.write(str(path), samples, sample_rate)
+        if os.name == "nt":
+            import winsound
+
+            winsound.PlaySound(str(path), winsound.SND_FILENAME)
+            return
+        command = shutil.which("afplay") or shutil.which("aplay")
+        if not command:
+            raise RuntimeError("No WAV playback command is available.")
+        subprocess.run([command, str(path)], check=True)
+    finally:
+        path.unlink(missing_ok=True)
+
+
+class KokoroSpeechBackend:
+    """Lazy, optional Kokoro-ONNX voice using Alexandria's warm profile."""
+
+    def __init__(self, root: Path = ROOT, synthesizer=None, player=None):
+        self.root = Path(root)
+        self._synthesizer = synthesizer
+        self._player = player or play_audio_samples
+
+    @property
+    def available(self) -> bool:
+        dependencies_ready = self._synthesizer is not None or (
+            importlib.util.find_spec("kokoro_onnx") is not None
+            and importlib.util.find_spec("soundfile") is not None
+        )
+        return natural_voice_ready(self.root) and dependencies_ready
+
+    def _load(self):
+        if self._synthesizer is None:
+            from kokoro_onnx import Kokoro
+
+            model, voices = natural_voice_asset_paths(self.root)
+            self._synthesizer = Kokoro(str(model), str(voices))
+        return self._synthesizer
+
+    def speak(self, text: str) -> None:
+        samples, sample_rate = self._load().create(
+            text,
+            voice="af_heart",
+            speed=0.95,
+            lang="en-us",
+        )
+        self._player(samples, sample_rate)
+
+
+class CommandSpeechBackend:
+    def __init__(self, command: list[str] | None = None):
+        self.command = list(command) if command is not None else native_speech_command()
+
+    @property
+    def available(self) -> bool:
+        return bool(self.command)
+
+    def speak(self, text: str) -> None:
+        run_speech_command(self.command or [], text)
+
+
+class SpeechRouter:
+    """Choose the natural neural voice when ready, otherwise use native TTS."""
+
+    def __init__(self, neural, native):
+        self.neural = neural
+        self.native = native
+
+    @property
+    def available(self) -> bool:
+        return bool(self.neural.available or self.native.available)
+
+    def speak(self, text: str) -> str:
+        if self.neural.available:
+            try:
+                for chunk in sentence_chunks(text):
+                    self.neural.speak(chunk)
+                return "neural"
+            except Exception:
+                # Voice output must survive optional neural-runtime failures.
+                pass
+        self.native.speak(text)
+        return "native"
+
+
 class SpeechEngine:
     """Serialize spoken replies on a daemon worker so Tk never blocks."""
 
-    def __init__(self, command: list[str] | None = None):
-        self.command = list(command) if command is not None else native_speech_command()
+    def __init__(self, command: list[str] | None = None, router=None):
+        native = CommandSpeechBackend(command)
+        self.router = router or SpeechRouter(
+            neural=KokoroSpeechBackend(),
+            native=native,
+        )
+        self.command = native.command
         self._queue: queue.Queue[str] = queue.Queue()
         self._worker: threading.Thread | None = None
         self._lock = threading.Lock()
 
     @property
     def available(self) -> bool:
-        return bool(self.command)
+        return bool(self.router.available)
 
     def speak(self, text: str) -> bool:
         spoken = clean_for_speech(text)
-        if not spoken or not self.command:
+        if not spoken or not self.router.available:
             return False
         self._queue.put(spoken)
         with self._lock:
@@ -83,6 +241,6 @@ class SpeechEngine:
             except queue.Empty:
                 return
             try:
-                run_speech_command(self.command or [], text)
+                self.router.speak(text)
             finally:
                 self._queue.task_done()
