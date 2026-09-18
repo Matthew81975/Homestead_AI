@@ -14,8 +14,7 @@ from .core.services import ServiceContainer
 from .core.tabs import TabRegistry, method_tab
 from .speech import SpeechEngine
 from .ports import port_candidates, saved_endpoint
-from .gui_local_codex import LocalCodexGuiMixin
-from .tabs.local_codex import LOCAL_CODEX_TAB
+from .tabs.local_codex import LOCAL_CODEX_TAB, LocalCodexGuiMixin
 
 BASE = None
 
