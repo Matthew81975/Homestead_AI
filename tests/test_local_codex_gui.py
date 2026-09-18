@@ -154,3 +154,38 @@ def test_local_codex_presentation_helpers_are_importable_without_legacy_module()
     assert local_codex_control_states(
         {"worker_state": "running", "task_state": "idle"}
     )["new_task"]
+
+
+
+def test_local_codex_controller_prefers_shared_service_container():
+    from hcs_ai.core.services import ServiceContainer
+    from hcs_ai.tabs.local_codex.controller import LocalCodexControllerMixin
+
+    preferred = object()
+    fallback = object()
+
+    class Host(LocalCodexControllerMixin):
+        services = ServiceContainer({"local_codex": preferred})
+        local_codex_service = fallback
+
+    assert Host()._local_codex_service() is preferred
+
+
+def test_local_codex_controller_falls_back_for_legacy_hosts():
+    from hcs_ai.core.services import ServiceContainer
+    from hcs_ai.tabs.local_codex.controller import LocalCodexControllerMixin
+
+    fallback = object()
+
+    class Host(LocalCodexControllerMixin):
+        services = ServiceContainer()
+        local_codex_service = fallback
+
+    assert Host()._local_codex_service() is fallback
+
+
+def test_local_codex_controller_and_presentation_do_not_import_tkinter():
+    root = Path(__file__).parents[1] / "hcs_ai" / "tabs" / "local_codex"
+
+    assert "tkinter" not in (root / "controller.py").read_text(encoding="utf-8")
+    assert "tkinter" not in (root / "presentation.py").read_text(encoding="utf-8")
