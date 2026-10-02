@@ -35,6 +35,11 @@ class TaskJournal:
     last_action: dict[str, Any] | None = None
     original_files: dict[str, str] = field(default_factory=dict)
     consecutive_failures: int = 0
+    recovery_cycles: int = 0
+    recovery_attempts: list[dict[str, Any]] = field(default_factory=list)
+    recovery_strategies_attempted: list[str] = field(default_factory=list)
+    last_failure_category: str | None = None
+    last_recovery_reason: str | None = None
     commit_approved: bool = False
     push_approved: bool = False
 
@@ -75,6 +80,28 @@ class TaskJournal:
 
     def clear_failures(self) -> None:
         self.consecutive_failures = 0
+        self.save()
+
+    def record_recovery(self, *, category: str, strategy: str, reason: str) -> None:
+        self.recovery_cycles += 1
+        self.last_failure_category = category
+        self.last_recovery_reason = reason
+        self.recovery_strategies_attempted.append(strategy)
+        self.recovery_attempts.append({
+            "cycle": self.recovery_cycles,
+            "category": category,
+            "strategy": strategy,
+            "reason": reason,
+            "at": datetime.now().isoformat(),
+        })
+        self.save()
+
+    def clear_recovery(self) -> None:
+        self.recovery_cycles = 0
+        self.recovery_attempts.clear()
+        self.recovery_strategies_attempted.clear()
+        self.last_failure_category = None
+        self.last_recovery_reason = None
         self.save()
 
 
