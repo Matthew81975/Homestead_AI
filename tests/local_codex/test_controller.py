@@ -1000,3 +1000,40 @@ def test_tornado_probe_reporting_task_completes_deterministically(tmp_path: Path
     assert "a" in result.summary
     assert "b" in result.summary
     assert "HTTP 401" in result.summary
+
+
+def test_controller_subdivides_and_advances_leaves(tmp_path: Path):
+    journal = make_journal(tmp_path)
+    client = FakeClient([
+        '{"action":"subdivide_task","tasks":["inspect file","verify repo"]}',
+        '{"action":"finish","summary":"inspection done","tests":[]}',
+        '{"action":"finish","summary":"verification done","tests":[]}',
+    ])
+    executor = FakeExecutor([
+        {"ok": True, "files": ["main.py"]},
+        {"ok": True, "summary": "inspection done", "tests": []},
+        {"ok": True, "summary": "verification done", "tests": []},
+    ])
+
+    result = AgentController(client, executor, journal, 3).run()
+
+    assert result.status is AgentStatus.READY_FOR_APPROVAL
+    assert journal.active_task_node is None
+    assert journal.task_nodes["root.1"]["status"] == "completed"
+    assert journal.task_nodes["root.2"]["status"] == "completed"
+    assert journal.task_progress()["fraction"] == 1.0
+
+
+def test_controller_context_uses_active_subtask_after_restart(tmp_path: Path):
+    journal = make_journal(tmp_path)
+    journal.subdivide_active_task(["first leaf", "second leaf"])
+    journal.complete_active_task()
+    reloaded = TaskJournal.load(journal.path)
+
+    controller = AgentController(FakeClient([]), FakeExecutor([]), reloaded, 3)
+    context = json.loads(controller._messages()[1]["content"])
+
+    assert context["task"] == "Inspect repo"
+    assert context["current_task"] == "second leaf"
+    assert context["task_progress"]["active_id"] == "root.2"
+    assert context["task_progress"]["completed_leaves"] == 1
