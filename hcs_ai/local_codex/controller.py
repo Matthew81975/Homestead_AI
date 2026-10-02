@@ -125,6 +125,34 @@ class AgentController:
             for step in journal.steps
         )
 
+        if journal.recovery_attempts:
+            last = journal.recovery_attempts[-1]
+            strategy = str(last.get("strategy") or "replan_from_goal")
+            category = str(last.get("category") or "generic")
+            reason = str(last.get("reason") or "previous recovery")
+            self.pending_instructions.append(
+                recovery_instruction(
+                    category=category,
+                    strategy=strategy,
+                    reason=reason,
+                    cycle=max(1, int(journal.recovery_cycles)),
+                    maximum=self.max_recovery_cycles,
+                )
+            )
+
+        guarded = {
+            "list_files", "read_file", "search_text", "git_status", "git_diff",
+            "project_state", "project_ui", "tornado_status", "tornado_probe",
+        }
+        for step in reversed(journal.steps):
+            action = step.get("action", {})
+            result = step.get("result", {})
+            if result.get("ok") and action.get("action") in guarded:
+                self.last_successful_inspection_key = json.dumps(action, sort_keys=True)
+                break
+            if result.get("ok") and action.get("action") not in guarded:
+                break
+
     def _status(self, message: str) -> None:
         self.status_callback(message)
 
@@ -507,7 +535,7 @@ class AgentController:
             self.journal.record_failure()
 
     def run_one_step(self) -> ControllerResult:
-        if self.journal.status not in {AgentStatus.PAUSED, AgentStatus.BLOCKED}:
+        if self.journal.status is not AgentStatus.PAUSED:
             self.journal.status = AgentStatus.WORKING
             self.journal.save()
 
@@ -584,9 +612,7 @@ class AgentController:
             self._report_model_outcome(False, "invalid_action")
             self._record_failure(str(exc))
             if self.journal.consecutive_failures >= self.max_failed_actions:
-                self.journal.status = AgentStatus.BLOCKED
-                self.journal.save()
-                return ControllerResult(AgentStatus.BLOCKED)
+                return self._recover_or_block(str(exc), exception=exc)
             return ControllerResult(AgentStatus.WORKING)
 
         self.journal.record_step(action, result)
