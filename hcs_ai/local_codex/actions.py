@@ -57,6 +57,7 @@ ACTION_REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     "project_command": ("command",),
     "tornado_status": (),
     "tornado_probe": (),
+    "subdivide_task": (),
     "finish": (),
 }
 
@@ -82,6 +83,12 @@ def validate_action(action: dict[str, Any]) -> dict[str, Any]:
             raise ActionValidationError(f"{name} requires field '{field}'")
     if name == "project_command" and "arguments" in action and not isinstance(action["arguments"], dict):
         raise ActionValidationError("project_command field 'arguments' must be an object")
+    if name == "subdivide_task":
+        tasks = action.get("tasks")
+        if not isinstance(tasks, list) or len(tasks) < 2:
+            raise ActionValidationError("subdivide_task requires at least two child tasks")
+        if not all(isinstance(item, str) and item.strip() for item in tasks):
+            raise ActionValidationError("subdivide_task child tasks must be non-empty strings")
     return action
 
 
