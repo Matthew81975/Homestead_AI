@@ -41,17 +41,30 @@ def test_system_prompt_documents_exact_search_text_schema():
     assert "search_text uses text, not query or pattern" in prompt
 
 
-def test_three_invalid_responses_block(tmp_path: Path):
+def test_three_invalid_responses_enter_recovery_instead_of_blocking(tmp_path: Path):
     journal = make_journal(tmp_path)
     controller = AgentController(
-        client=FakeClient(["bad", "still bad", "bad again"]),
-        executor=FakeExecutor([{"ok": True, "files": ["main.py"]}]),
+        client=FakeClient([
+            "bad",
+            "still bad",
+            "bad again",
+            '{"action":"finish","summary":"recovered","tests":[]}',
+        ]),
+        executor=FakeExecutor([
+            {"ok": True, "files": ["main.py"]},
+            {"ok": True, "summary": "recovered", "tests": []},
+        ]),
         journal=journal,
         max_failed_actions=3,
     )
+
     result = controller.run()
-    assert result.status is AgentStatus.BLOCKED
-    assert journal.consecutive_failures == 3
+
+    assert result.status is AgentStatus.READY_FOR_APPROVAL
+    assert journal.consecutive_failures == 0
+    assert journal.recovery_cycles == 1
+    assert journal.recovery_attempts[0]["category"] == "model_format"
+    assert journal.recovery_strategies_attempted
 
 
 def test_changed_files_require_tests_and_diff(tmp_path: Path):
@@ -126,7 +139,7 @@ def test_controller_reports_progress_events(tmp_path: Path):
     assert any("Result: ok" in event for event in events)
 
 
-def test_lm_studio_error_blocks_cleanly(tmp_path: Path):
+def test_lm_studio_error_exhausts_distinct_recovery_before_blocking(tmp_path: Path):
     from hcs_ai.local_codex.lm_client import LMStudioError
 
     class ErrorClient:
@@ -142,8 +155,12 @@ def test_lm_studio_error_blocks_cleanly(tmp_path: Path):
     ).run()
 
     assert result.status is AgentStatus.BLOCKED
+    assert journal.recovery_cycles == 8
+    assert len(journal.recovery_strategies_attempted) == 8
+    assert len(set(journal.recovery_strategies_attempted)) == 8
+    assert "Human input is required only if" in result.summary
     assert journal.steps[-1]["result"]["error"] == "LM Studio error: timed out"
-    assert any("LM Studio error" in event for event in events)
+    assert any("Factory recovery" in event for event in events)
 
 
 def test_messages_compact_large_tool_results(tmp_path: Path):
@@ -665,25 +682,104 @@ def test_messages_include_tornado_status_only_when_executor_supports_it(tmp_path
     assert '{"action":"tornado_status"}' in prompt
 
 
-def test_controller_blocks_cleanly_after_repeated_null_model_replies(tmp_path: Path):
+def test_null_model_replies_recover_then_continue(tmp_path: Path):
     journal = make_journal(tmp_path)
     controller = AgentController(
-        client=FakeClient([None, None, None]),
-        executor=FakeExecutor([{"ok": True, "files": ["main.py"]}]),
+        client=FakeClient([
+            None,
+            None,
+            None,
+            '{"action":"finish","summary":"recovered","tests":[]}',
+        ]),
+        executor=FakeExecutor([
+            {"ok": True, "files": ["main.py"]},
+            {"ok": True, "summary": "recovered", "tests": []},
+        ]),
         journal=journal,
         max_failed_actions=3,
     )
 
     result = controller.run()
 
-    assert result.status is AgentStatus.BLOCKED
-    assert journal.consecutive_failures == 3
+    assert result.status is AgentStatus.READY_FOR_APPROVAL
+    assert journal.recovery_cycles == 1
     errors = [
         step["result"].get("error", "")
         for step in journal.steps
         if step["action"].get("action") == "controller_error"
     ]
     assert errors[-3:] == ["model response must be text"] * 3
+
+
+def test_recovery_state_survives_controller_restart(tmp_path: Path):
+    journal = make_journal(tmp_path)
+    journal.record_recovery(
+        category="stagnation",
+        strategy="change_action",
+        reason="repeated successful inspection rejected",
+    )
+
+    controller = AgentController(
+        FakeClient([]),
+        FakeExecutor([]),
+        journal,
+        3,
+    )
+    context = json.loads(controller._messages()[1]["content"])
+
+    assert context["recovery"]["cycle"] == 1
+    assert context["recovery"]["strategies_attempted"] == ["change_action"]
+    assert controller.pending_instructions
+    assert "Strategy: change_action" in controller.pending_instructions[-1]
+
+
+def test_successful_inspection_does_not_erase_recovery_debt(tmp_path: Path):
+    journal = make_journal(tmp_path)
+    journal.record_recovery(
+        category="stagnation",
+        strategy="change_action",
+        reason="stalled",
+    )
+    journal.record_step(
+        {"action": "read_file", "path": "main.py"},
+        {"ok": True, "content": "print('hello')"},
+    )
+    controller = AgentController(
+        FakeClient(['{"action":"git_status"}']),
+        FakeExecutor([{"ok": True, "stdout": "", "stderr": "", "returncode": 0}]),
+        journal,
+        3,
+    )
+
+    result = controller.run_one_step()
+
+    assert result.status is AgentStatus.WORKING
+    assert journal.recovery_cycles == 1
+
+
+def test_meaningful_progress_resets_recovery_debt(tmp_path: Path):
+    journal = make_journal(tmp_path)
+    journal.record_recovery(
+        category="stagnation",
+        strategy="change_action",
+        reason="stalled",
+    )
+    journal.record_step(
+        {"action": "list_files", "path": "."},
+        {"ok": True, "files": ["main.py"]},
+    )
+    controller = AgentController(
+        FakeClient(['{"action":"run_command","command":"pytest -q"}']),
+        FakeExecutor([{"ok": True, "stdout": "1 passed", "stderr": "", "returncode": 0}]),
+        journal,
+        3,
+    )
+
+    result = controller.run_one_step()
+
+    assert result.status is AgentStatus.WORKING
+    assert journal.recovery_cycles == 0
+    assert journal.recovery_attempts == []
 
 
 def _sample_tornado_status_for_context():
