@@ -475,3 +475,16 @@ def test_tornado_probe_action_calls_tornado_diagnostics_probe(tmp_path: Path):
 def test_parse_tornado_probe_discards_irrelevant_small_model_fields():
     action = parse_action('{"action":"tornado_probe","path":"."}')
     assert action == {"action": "tornado_probe"}
+
+
+def test_subdivide_task_requires_multiple_children():
+    from hcs_ai.local_codex.actions import ActionValidationError, parse_action
+    import pytest
+
+    action = parse_action(
+        '{"action":"subdivide_task","tasks":["inspect controller","patch recovery"]}'
+    )
+    assert action["tasks"] == ["inspect controller", "patch recovery"]
+
+    with pytest.raises(ActionValidationError):
+        parse_action('{"action":"subdivide_task","tasks":["only one"]}')
