@@ -85,6 +85,7 @@ def build_controller(
         config["max_failed_actions"],
         status_callback=status,
         cancel_event=cancel_event,
+        max_recovery_cycles=int(config.get("max_recovery_cycles", 8)),
     )
 
 
