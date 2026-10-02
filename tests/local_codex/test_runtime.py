@@ -98,3 +98,14 @@ def test_build_controller_wires_tornado_diagnostics_and_status_callback(task, tm
     assert controller.client.provider_ids == ["local"]
     assert controller.client.status_callback is callback
     assert controller.status_callback is callback
+
+
+def test_build_controller_honors_recovery_cycle_limit(task, tmp_path):
+    config, journal = task
+    config["max_recovery_cycles"] = 5
+    controller = build_controller(
+        config,
+        journal,
+        workspaces_config_path=tmp_path / "missing.json",
+    )
+    assert controller.max_recovery_cycles == 5
