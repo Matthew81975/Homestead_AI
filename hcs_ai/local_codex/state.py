@@ -40,6 +40,8 @@ class TaskJournal:
     recovery_strategies_attempted: list[str] = field(default_factory=list)
     last_failure_category: str | None = None
     last_recovery_reason: str | None = None
+    task_nodes: dict[str, dict[str, Any]] = field(default_factory=dict)
+    active_task_node: str | None = "root"
     commit_approved: bool = False
     push_approved: bool = False
 
@@ -64,6 +66,107 @@ class TaskJournal:
         data.pop("path")
         data["status"] = self.status.value
         self.path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    def ensure_task_tree(self) -> None:
+        if self.task_nodes:
+            return
+        self.task_nodes = {
+            "root": {
+                "id": "root",
+                "prompt": self.task,
+                "status": "active",
+                "parent": None,
+                "children": [],
+            }
+        }
+        self.active_task_node = "root"
+        self.save()
+
+    def active_task_prompt(self) -> str:
+        self.ensure_task_tree()
+        if self.active_task_node is None:
+            return self.task
+        node = self.task_nodes.get(self.active_task_node)
+        return str(node.get("prompt") if node else self.task)
+
+    def subdivide_active_task(self, prompts: list[str]) -> list[str]:
+        self.ensure_task_tree()
+        if self.active_task_node is None:
+            raise ValueError("no active task to subdivide")
+        cleaned = [str(item).strip() for item in prompts if str(item).strip()]
+        if len(cleaned) < 2:
+            raise ValueError("subdivision requires at least two non-empty child tasks")
+
+        parent_id = self.active_task_node
+        parent = self.task_nodes[parent_id]
+        if parent.get("children"):
+            raise ValueError("active task is already subdivided")
+
+        child_ids: list[str] = []
+        for index, prompt in enumerate(cleaned, start=1):
+            child_id = f"{parent_id}.{index}"
+            while child_id in self.task_nodes:
+                index += 1
+                child_id = f"{parent_id}.{index}"
+            self.task_nodes[child_id] = {
+                "id": child_id,
+                "prompt": prompt,
+                "status": "pending",
+                "parent": parent_id,
+                "children": [],
+            }
+            child_ids.append(child_id)
+
+        parent["children"] = child_ids
+        parent["status"] = "waiting_children"
+        self.task_nodes[child_ids[0]]["status"] = "active"
+        self.active_task_node = child_ids[0]
+        self.save()
+        return child_ids
+
+    def complete_active_task(self) -> str | None:
+        self.ensure_task_tree()
+        current_id = self.active_task_node
+        if current_id is None:
+            return None
+        self.task_nodes[current_id]["status"] = "completed"
+
+        node_id = current_id
+        while True:
+            node = self.task_nodes[node_id]
+            parent_id = node.get("parent")
+            if parent_id is None:
+                self.active_task_node = None
+                self.save()
+                return None
+
+            parent = self.task_nodes[parent_id]
+            siblings = list(parent.get("children", []))
+            position = siblings.index(node_id)
+            for sibling_id in siblings[position + 1:]:
+                sibling = self.task_nodes[sibling_id]
+                if sibling.get("status") == "pending":
+                    sibling["status"] = "active"
+                    self.active_task_node = sibling_id
+                    self.save()
+                    return str(sibling.get("prompt", ""))
+
+            parent["status"] = "completed"
+            node_id = parent_id
+
+    def task_progress(self) -> dict[str, Any]:
+        self.ensure_task_tree()
+        nodes = list(self.task_nodes.values())
+        leaves = [node for node in nodes if not node.get("children")]
+        completed = sum(1 for node in leaves if node.get("status") == "completed")
+        total = len(leaves)
+        return {
+            "active_id": self.active_task_node,
+            "active_prompt": self.active_task_prompt() if self.active_task_node else None,
+            "completed_leaves": completed,
+            "total_leaves": total,
+            "fraction": 1.0 if total == 0 else completed / total,
+        }
 
     def record_step(self, action: dict[str, Any], result: dict[str, Any]) -> None:
         self.last_action = action
