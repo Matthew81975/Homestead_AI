@@ -30,6 +30,7 @@ def build_system_prompt(*, include_project_control: bool = True, include_tornado
             '{"action":"project_ui"}',
             '{"action":"project_command","command":"name","arguments":{}}',
         ])
+    actions.append('{"action":"subdivide_task","tasks":["small independent leaf 1","small independent leaf 2"]}')
     actions.append('{"action":"finish","summary":"what was done","tests":[]}')
     action_text = "\n".join(actions)
     tornado_guidance = ""
@@ -66,6 +67,9 @@ def build_system_prompt(*, include_project_control: bool = True, include_tornado
         "After code edits, run relevant tests and inspect git_diff before finish.\n"
         "For documentation/text-only edits, inspect git_diff; do not execute the document as a test.\n"
         "Prefer minimal, targeted changes.\n"
+        "Work on current_task, which may be a leaf of a larger persisted task tree.\n"
+        "Use subdivide_task when current_task is too large for the available context; child tasks must be smaller independently executable leaves.\n"
+        "finish completes current_task; when sibling leaves remain the controller advances automatically instead of ending the overall task.\n"
         "If a tool action fails, use the returned result to correct the next action.\n"
         "When recovery instructions are present, follow the named recovery strategy rather than repeating equivalent work.\n"
         "If the task is too large for the current context, subdivide it into a smaller independently executable leaf and continue."
@@ -353,8 +357,11 @@ class AgentController:
     def _messages(self) -> list[dict[str, str]]:
         include_project_control = getattr(self.executor, "project_control", None) is not None
         include_tornado_status = getattr(self.executor, "tornado_client", None) is not None
+        self.journal.ensure_task_tree()
         context = {
             "task": self.journal.task,
+            "current_task": self.journal.active_task_prompt(),
+            "task_progress": self.journal.task_progress(),
             "files_changed": self.journal.files_changed,
             "recent_steps": self._recent_steps_context(),
             "tests_run": self._compact_value(self.journal.tests_run[-2:]),
@@ -418,7 +425,7 @@ class AgentController:
         if not result.get("ok"):
             return False
         name = action.get("action")
-        if name in {"write_file", "replace_text", "project_command"}:
+        if name in {"write_file", "replace_text", "project_command", "subdivide_task"}:
             return True
         if name == "run_command":
             return True
@@ -601,7 +608,16 @@ class AgentController:
                 if self.journal.consecutive_failures >= self.max_failed_actions:
                     return self._recover_or_block("repeated or invalid action threshold reached")
                 return ControllerResult(AgentStatus.WORKING)
-            result = self.executor.execute(action)
+            if action["action"] == "subdivide_task":
+                child_ids = self.journal.subdivide_active_task(action["tasks"])
+                result = {
+                    "ok": True,
+                    "children": child_ids,
+                    "active_task": self.journal.active_task_prompt(),
+                    "task_progress": self.journal.task_progress(),
+                }
+            else:
+                result = self.executor.execute(action)
         except (
             ActionValidationError,
             KeyError,
@@ -688,6 +704,25 @@ class AgentController:
                 return ControllerResult(AgentStatus.WORKING)
 
             self._report_model_outcome(bool(result.get("ok")), "action_succeeded" if result.get("ok") else "action_failed")
+            next_prompt = self.journal.complete_active_task()
+            if next_prompt is not None:
+                self.journal.clear_recovery()
+                self.pending_instructions.append(
+                    "NEXT SUBTASK: continue autonomously with the newly active leaf. "
+                    "Do not repeat completed sibling work."
+                )
+                progress = self.journal.task_progress()
+                self._status(
+                    "Factory task progress: "
+                    f"{progress['completed_leaves']}/{progress['total_leaves']} leaves complete"
+                )
+                self.journal.status = AgentStatus.WORKING
+                self.journal.save()
+                return ControllerResult(
+                    AgentStatus.WORKING,
+                    f"Completed leaf; continuing with: {next_prompt}",
+                )
+
             self.journal.status = AgentStatus.READY_FOR_APPROVAL
             self.journal.save()
             return ControllerResult(
