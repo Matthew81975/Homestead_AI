@@ -55,6 +55,7 @@
     "hcs_ai/local_codex/project_control.py",
     "hcs_ai/local_codex/prompt_optimizer.py",
     "hcs_ai/local_codex/protocol.py",
+    "hcs_ai/local_codex/recovery.py",
     "hcs_ai/local_codex/runtime.py",
     "hcs_ai/local_codex/self_update.py",
     "hcs_ai/local_codex/service.py",

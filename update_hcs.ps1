@@ -127,6 +127,22 @@ function Prune-OldBackups {
 
 $state = Read-State
 
+# Never replace files inside a Git development/worktree checkout from main.
+# Installed release copies may self-update; source checkouts should be updated
+# explicitly with Git so feature branches and local development are preserved.
+try {
+    $gitDir = & git -C $Root rev-parse --git-dir 2>$null
+    if ($LASTEXITCODE -eq 0 -and $gitDir) {
+        $branchName = (& git -C $Root branch --show-current 2>$null).Trim()
+        if ($branchName -and $branchName -ne $Branch) {
+            Write-Host "HCS-AI update check skipped for Git branch '$branchName'."
+            exit 0
+        }
+    }
+} catch {
+    # Git may not be installed for normal release installs; continue updater.
+}
+
 if ($Rollback) {
     if (-not $state.last_backup -or -not (Test-Path $state.last_backup)) {
         throw "No rollback backup is available."

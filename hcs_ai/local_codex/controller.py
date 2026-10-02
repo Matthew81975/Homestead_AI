@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from .actions import ActionValidationError, parse_action
 from .state import AgentStatus, TaskJournal
 from .lm_client import LMStudioError
+from .recovery import classify_failure, next_strategy, recovery_instruction
 
 
 def build_system_prompt(*, include_project_control: bool = True, include_tornado_status: bool = False) -> str:
@@ -29,6 +30,7 @@ def build_system_prompt(*, include_project_control: bool = True, include_tornado
             '{"action":"project_ui"}',
             '{"action":"project_command","command":"name","arguments":{}}',
         ])
+    actions.append('{"action":"subdivide_task","tasks":["small independent leaf 1","small independent leaf 2"]}')
     actions.append('{"action":"finish","summary":"what was done","tests":[]}')
     action_text = "\n".join(actions)
     tornado_guidance = ""
@@ -65,7 +67,12 @@ def build_system_prompt(*, include_project_control: bool = True, include_tornado
         "After code edits, run relevant tests and inspect git_diff before finish.\n"
         "For documentation/text-only edits, inspect git_diff; do not execute the document as a test.\n"
         "Prefer minimal, targeted changes.\n"
-        "If a tool action fails, use the returned result to correct the next action."
+        "Work on current_task, which may be a leaf of a larger persisted task tree.\n"
+        "Use subdivide_task when current_task is too large for the available context; child tasks must be smaller independently executable leaves.\n"
+        "finish completes current_task; when sibling leaves remain the controller advances automatically instead of ending the overall task.\n"
+        "If a tool action fails, use the returned result to correct the next action.\n"
+        "When recovery instructions are present, follow the named recovery strategy rather than repeating equivalent work.\n"
+        "If the task is too large for the current context, subdivide it into a smaller independently executable leaf and continue."
     )
 
 
@@ -76,11 +83,21 @@ class ControllerResult:
 
 
 class AgentController:
-    def __init__(self, client, executor, journal: TaskJournal, max_failed_actions: int, status_callback=None, cancel_event=None):
+    def __init__(
+        self,
+        client,
+        executor,
+        journal: TaskJournal,
+        max_failed_actions: int,
+        status_callback=None,
+        cancel_event=None,
+        max_recovery_cycles: int = 8,
+    ):
         self.client = client
         self.executor = executor
         self.journal = journal
         self.max_failed_actions = max_failed_actions
+        self.max_recovery_cycles = max(1, int(max_recovery_cycles))
         self.status_callback = status_callback or (lambda message: None)
         self.cancel_event = cancel_event
         self.seen_diff = any(
@@ -111,6 +128,34 @@ class AgentController:
             and step.get("result", {}).get("ok")
             for step in journal.steps
         )
+
+        if journal.recovery_attempts:
+            last = journal.recovery_attempts[-1]
+            strategy = str(last.get("strategy") or "replan_from_goal")
+            category = str(last.get("category") or "generic")
+            reason = str(last.get("reason") or "previous recovery")
+            self.pending_instructions.append(
+                recovery_instruction(
+                    category=category,
+                    strategy=strategy,
+                    reason=reason,
+                    cycle=max(1, int(journal.recovery_cycles)),
+                    maximum=self.max_recovery_cycles,
+                )
+            )
+
+        guarded = {
+            "list_files", "read_file", "search_text", "git_status", "git_diff",
+            "project_state", "project_ui", "tornado_status", "tornado_probe",
+        }
+        for step in reversed(journal.steps):
+            action = step.get("action", {})
+            result = step.get("result", {})
+            if result.get("ok") and action.get("action") in guarded:
+                self.last_successful_inspection_key = json.dumps(action, sort_keys=True)
+                break
+            if result.get("ok") and action.get("action") not in guarded:
+                break
 
     def _status(self, message: str) -> None:
         self.status_callback(message)
@@ -312,13 +357,23 @@ class AgentController:
     def _messages(self) -> list[dict[str, str]]:
         include_project_control = getattr(self.executor, "project_control", None) is not None
         include_tornado_status = getattr(self.executor, "tornado_client", None) is not None
+        self.journal.ensure_task_tree()
         context = {
             "task": self.journal.task,
+            "current_task": self.journal.active_task_prompt(),
+            "task_progress": self.journal.task_progress(),
             "files_changed": self.journal.files_changed,
             "recent_steps": self._recent_steps_context(),
             "tests_run": self._compact_value(self.journal.tests_run[-2:]),
             "repeated_failed_action": self.repeated_failed_action,
             "pending_instructions": list(self.pending_instructions),
+            "recovery": {
+                "cycle": self.journal.recovery_cycles,
+                "maximum": self.max_recovery_cycles,
+                "last_failure_category": self.journal.last_failure_category,
+                "last_recovery_reason": self.journal.last_recovery_reason,
+                "strategies_attempted": list(self.journal.recovery_strategies_attempted),
+            },
         }
         if include_tornado_status:
             tornado_context = self._latest_tornado_status_context()
@@ -364,6 +419,75 @@ class AgentController:
         value = text.strip()
         if value:
             self.pending_instructions.append(value)
+
+    @staticmethod
+    def _is_meaningful_progress(action: dict, result: dict) -> bool:
+        if not result.get("ok"):
+            return False
+        name = action.get("action")
+        if name in {"write_file", "replace_text", "project_command", "subdivide_task"}:
+            return True
+        if name == "run_command":
+            return True
+        if name == "git_diff":
+            return True
+        return False
+
+    def _recover_or_block(
+        self,
+        reason: str,
+        *,
+        exception: Exception | None = None,
+        force: bool = False,
+    ) -> ControllerResult:
+        if not force and self.journal.consecutive_failures < self.max_failed_actions:
+            return ControllerResult(AgentStatus.WORKING)
+
+        category = classify_failure(reason, exception=exception)
+        strategy = next_strategy(
+            category,
+            self.journal.recovery_strategies_attempted,
+        )
+
+        if (
+            self.journal.recovery_cycles < self.max_recovery_cycles
+            and strategy is not None
+        ):
+            self.journal.record_recovery(
+                category=category,
+                strategy=strategy,
+                reason=reason,
+            )
+            self.journal.clear_failures()
+            instruction = recovery_instruction(
+                category=category,
+                strategy=strategy,
+                reason=reason,
+                cycle=self.journal.recovery_cycles,
+                maximum=self.max_recovery_cycles,
+            )
+            self.pending_instructions.append(instruction)
+            self.journal.status = AgentStatus.WORKING
+            self.journal.save()
+            self._status(
+                f"Factory recovery {self.journal.recovery_cycles}/{self.max_recovery_cycles}: "
+                f"{category} -> {strategy}"
+            )
+            return ControllerResult(AgentStatus.WORKING)
+
+        summary = (
+            "Factory exhausted autonomous recovery. "
+            f"Last category={category}; reason={reason}; "
+            f"strategies={self.journal.recovery_strategies_attempted}. "
+            "Human input is required only if this failure depends on a credential, "
+            "permission, destructive decision, or unavailable external resource."
+        )
+        self.journal.last_failure_category = category
+        self.journal.last_recovery_reason = reason
+        self.journal.status = AgentStatus.BLOCKED
+        self.journal.save()
+        self._status(summary)
+        return ControllerResult(AgentStatus.BLOCKED, summary)
 
     def _record_failure(self, reason: str) -> None:
         self.journal.record_failure()
@@ -418,7 +542,7 @@ class AgentController:
             self.journal.record_failure()
 
     def run_one_step(self) -> ControllerResult:
-        if self.journal.status not in {AgentStatus.PAUSED, AgentStatus.BLOCKED}:
+        if self.journal.status is not AgentStatus.PAUSED:
             self.journal.status = AgentStatus.WORKING
             self.journal.save()
 
@@ -430,9 +554,7 @@ class AgentController:
             return ControllerResult(AgentStatus.PAUSED)
 
         if self.journal.consecutive_failures >= self.max_failed_actions:
-            self.journal.status = AgentStatus.BLOCKED
-            self.journal.save()
-            return ControllerResult(AgentStatus.BLOCKED)
+            return self._recover_or_block("failure threshold reached before next model action")
 
         self._status("Waiting for LM Studio...")
         try:
@@ -441,9 +563,7 @@ class AgentController:
             reason = f"LM Studio error: {exc}"
             self._record_failure(reason)
             self._status(reason)
-            self.journal.status = AgentStatus.BLOCKED
-            self.journal.save()
-            return ControllerResult(AgentStatus.BLOCKED)
+            return self._recover_or_block(reason, exception=exc, force=True)
 
         self._status("LM Studio response received.")
         self.pending_instructions.clear()
@@ -470,9 +590,7 @@ class AgentController:
                 self._report_model_outcome(False, "repeated_action")
                 self._record_failure("repeated project observation rejected")
                 if self.journal.consecutive_failures >= self.max_failed_actions:
-                    self.journal.status = AgentStatus.BLOCKED
-                    self.journal.save()
-                    return ControllerResult(AgentStatus.BLOCKED)
+                    return self._recover_or_block("repeated or invalid action threshold reached")
                 return ControllerResult(AgentStatus.WORKING)
             if (
                 action["action"] in guarded_inspections
@@ -488,11 +606,18 @@ class AgentController:
                 self._report_model_outcome(False, "repeated_action")
                 self._record_failure("repeated successful inspection rejected")
                 if self.journal.consecutive_failures >= self.max_failed_actions:
-                    self.journal.status = AgentStatus.BLOCKED
-                    self.journal.save()
-                    return ControllerResult(AgentStatus.BLOCKED)
+                    return self._recover_or_block("repeated or invalid action threshold reached")
                 return ControllerResult(AgentStatus.WORKING)
-            result = self.executor.execute(action)
+            if action["action"] == "subdivide_task":
+                child_ids = self.journal.subdivide_active_task(action["tasks"])
+                result = {
+                    "ok": True,
+                    "children": child_ids,
+                    "active_task": self.journal.active_task_prompt(),
+                    "task_progress": self.journal.task_progress(),
+                }
+            else:
+                result = self.executor.execute(action)
         except (
             ActionValidationError,
             KeyError,
@@ -503,9 +628,7 @@ class AgentController:
             self._report_model_outcome(False, "invalid_action")
             self._record_failure(str(exc))
             if self.journal.consecutive_failures >= self.max_failed_actions:
-                self.journal.status = AgentStatus.BLOCKED
-                self.journal.save()
-                return ControllerResult(AgentStatus.BLOCKED)
+                return self._recover_or_block(str(exc), exception=exc)
             return ControllerResult(AgentStatus.WORKING)
 
         self.journal.record_step(action, result)
@@ -521,6 +644,8 @@ class AgentController:
 
         if result.get("ok"):
             self.journal.clear_failures()
+            if self._is_meaningful_progress(action, result):
+                self.journal.clear_recovery()
             self.last_failed_action_key = None
             self.repeated_failed_action = None
             if action["action"] in guarded_inspections:
@@ -575,12 +700,31 @@ class AgentController:
                     "finish rejected: changed files require git diff, and code changes require passing tests"
                 )
                 if self.journal.consecutive_failures >= self.max_failed_actions:
-                    self.journal.status = AgentStatus.BLOCKED
-                    self.journal.save()
-                    return ControllerResult(AgentStatus.BLOCKED)
+                    return self._recover_or_block(
+                        "finish rejected: changed files require git diff, and code changes require passing tests"
+                    )
                 return ControllerResult(AgentStatus.WORKING)
 
             self._report_model_outcome(bool(result.get("ok")), "action_succeeded" if result.get("ok") else "action_failed")
+            next_prompt = self.journal.complete_active_task()
+            if next_prompt is not None:
+                self.journal.clear_recovery()
+                self.pending_instructions.append(
+                    "NEXT SUBTASK: continue autonomously with the newly active leaf. "
+                    "Do not repeat completed sibling work."
+                )
+                progress = self.journal.task_progress()
+                self._status(
+                    "Factory task progress: "
+                    f"{progress['completed_leaves']}/{progress['total_leaves']} leaves complete"
+                )
+                self.journal.status = AgentStatus.WORKING
+                self.journal.save()
+                return ControllerResult(
+                    AgentStatus.WORKING,
+                    f"Completed leaf; continuing with: {next_prompt}",
+                )
+
             self.journal.status = AgentStatus.READY_FOR_APPROVAL
             self.journal.save()
             return ControllerResult(
@@ -589,9 +733,11 @@ class AgentController:
             )
 
         if self.journal.consecutive_failures >= self.max_failed_actions:
-            self.journal.status = AgentStatus.BLOCKED
-            self.journal.save()
-            return ControllerResult(AgentStatus.BLOCKED)
+            reason = (
+                f"action {action.get('action')} failed: "
+                f"{result.get('error', 'unknown action failure')}"
+            )
+            return self._recover_or_block(reason)
 
         return ControllerResult(AgentStatus.WORKING)
 

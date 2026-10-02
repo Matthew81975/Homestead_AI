@@ -80,3 +80,28 @@ def test_new_journals_are_unique_even_with_same_clock_tick(tmp_path, monkeypatch
     assert first.path != second.path
     assert first.path.exists()
     assert second.path.exists()
+
+
+def test_recursive_task_tree_advances_and_persists(tmp_path: Path):
+    journal = TaskJournal.new("root job", r"C:\repo", "model", tmp_path)
+    children = journal.subdivide_active_task(["first leaf", "second leaf"])
+
+    assert children == ["root.1", "root.2"]
+    assert journal.active_task_prompt() == "first leaf"
+    assert journal.task_progress()["total_leaves"] == 2
+
+    grandchildren = journal.subdivide_active_task(["first-a", "first-b"])
+    assert grandchildren == ["root.1.1", "root.1.2"]
+    assert journal.active_task_prompt() == "first-a"
+    assert journal.task_progress()["total_leaves"] == 3
+
+    assert journal.complete_active_task() == "first-b"
+    assert journal.complete_active_task() == "second leaf"
+
+    reloaded = TaskJournal.load(journal.path)
+    assert reloaded.active_task_prompt() == "second leaf"
+    assert reloaded.task_progress()["completed_leaves"] == 2
+
+    assert reloaded.complete_active_task() is None
+    assert reloaded.active_task_node is None
+    assert reloaded.task_progress()["fraction"] == 1.0

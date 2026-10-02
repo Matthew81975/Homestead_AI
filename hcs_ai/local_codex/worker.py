@@ -173,6 +173,7 @@ class WorkerRuntime:
             config.setdefault("model", "local-model")
             config.setdefault("lm_studio_url", "http://127.0.0.1:1234/v1")
             config.setdefault("max_failed_actions", 3)
+            config.setdefault("max_recovery_cycles", 8)
             tornado = config.setdefault("tornado", {})
             tornado["state_path"] = str(self.data_root / "tornado" / "tornado_state.json")
             tornado["log_path"] = str(self.data_root / "logs" / "tornado.log")
