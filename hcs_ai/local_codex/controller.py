@@ -700,7 +700,9 @@ class AgentController:
                     "finish rejected: changed files require git diff, and code changes require passing tests"
                 )
                 if self.journal.consecutive_failures >= self.max_failed_actions:
-                    return self._recover_or_block("repeated or invalid action threshold reached")
+                    return self._recover_or_block(
+                        "finish rejected: changed files require git diff, and code changes require passing tests"
+                    )
                 return ControllerResult(AgentStatus.WORKING)
 
             self._report_model_outcome(bool(result.get("ok")), "action_succeeded" if result.get("ok") else "action_failed")
@@ -731,7 +733,11 @@ class AgentController:
             )
 
         if self.journal.consecutive_failures >= self.max_failed_actions:
-            return self._recover_or_block("failure threshold reached after action")
+            reason = (
+                f"action {action.get('action')} failed: "
+                f"{result.get('error', 'unknown action failure')}"
+            )
+            return self._recover_or_block(reason)
 
         return ControllerResult(AgentStatus.WORKING)
 
