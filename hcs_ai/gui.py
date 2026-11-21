@@ -13,6 +13,7 @@ from .config import ROOT, load_config, update_local_config
 from .speech import SpeechEngine
 from .ports import port_candidates, saved_endpoint
 from .gui_local_codex import LOCAL_CODEX_TAB_TITLE, LocalCodexGuiMixin
+from hcs_robot_tab import RobotCommandTab
 
 BASE = None
 
@@ -107,6 +108,9 @@ class App(LocalCodexGuiMixin, tk.Tk):
             ["Knowledge Base", "HKR Librarian", "External Library", "Memory", "MCP", LOCAL_CODEX_TAB_TITLE, "System"],
         ):
             self.tabs.add(frame, text=title)
+
+        self.robot_command_tab = RobotCommandTab(self.tabs)
+        self.tabs.add(self.robot_command_tab, text="Robots")
 
         self.workspace_pane.add(self.tabs, weight=4)
         self.workspace_pane.add(self.chat_tab, weight=1)
